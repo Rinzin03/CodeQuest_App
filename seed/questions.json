@@ -1,0 +1,11 @@
+[
+  {
+    "topicId": "topic_1",
+    "type": "quiz",
+    "difficulty": "easy",
+    "questionText": "What function is used to output text to the console in Python?",
+    "options": ["print()", "echo()", "console.log()", "write()"],
+    "correctAnswer": "print()",
+    "explanation": "In Python, the print() function prints the specified message to the screen."
+  }
+]
