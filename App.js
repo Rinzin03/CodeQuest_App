@@ -10,8 +10,12 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from './src/services/firebase';
 
 // ==========================================
-// IMPORTING SCREENS (NOTE: NO CURLY BRACES {} 
-// BECAUSE THEY ARE ALL DEFAULT EXPORTS!)
+// IMPORTING DATABASE SEEDING SCRIPT
+// ==========================================
+import { seedExpandedCodeQuestDatabase } from './src/services/seedExpandedDatabase';
+
+// ==========================================
+// IMPORTING SCREENS (DEFAULT EXPORTS)
 // ==========================================
 import AuthScreen from './src/screens/AuthScreen';
 import HomeDashboardScreen from './src/screens/HomeDashboardScreen';
@@ -27,13 +31,11 @@ const Tab = createBottomTabNavigator();
 // ==========================================
 // MAIN TABS NAVIGATION (Bottom Bar)
 // ==========================================
-// This controls the tab bar at the bottom of the screen 
-// allowing users to switch between Home, Quest Map, and Profile.
 function MainTabs() {
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
-        headerShown: false, // Hide header on tabs since screens have custom layouts
+        headerShown: false,
         tabBarStyle: {
           backgroundColor: '#FFF',
           borderTopWidth: 2,
@@ -42,14 +44,13 @@ function MainTabs() {
           paddingBottom: 8,
           paddingTop: 8,
         },
-        tabBarActiveTintColor: '#FF6B35', // Active tab icon color (Orange)
-        tabBarInactiveTintColor: '#888',   // Inactive tab icon color (Gray)
+        tabBarActiveTintColor: '#FF6B35',
+        tabBarInactiveTintColor: '#888',
         tabBarLabelStyle: {
           fontSize: 12,
           fontWeight: 'bold',
         },
-        // Dynamically assign vector icons based on the active tab route name
-        tabBarIcon: ({ focused, color, size }) => {
+        tabBarIcon: ({ focused, color }) => {
           let iconName;
           if (route.name === 'Home') {
             iconName = focused ? 'home' : 'home-outline';
@@ -72,20 +73,23 @@ function MainTabs() {
 // ==========================================
 // ROOT APP COMPONENT
 // ==========================================
-// The top-level wrapper that listens to Firebase authentication state 
-// and switches between the Login/Signup flow and the Main App.
 export default function App() {
-  const [user, setUser] = useState(null);       // Tracks logged-in user state
-  const [initializing, setInitializing] = useState(true); // Loading check during startup
+  const [user, setUser] = useState(null);
+  const [initializing, setInitializing] = useState(true);
 
-  // Listen to Firebase authentication state changes in real-time
+  // 1. Run database seeding script ONCE when the app starts up
+  useEffect(() => {
+    seedExpandedCodeQuestDatabase();
+  }, []);
+
+  // 2. Listen to Firebase authentication state changes in real-time
   useEffect(() => {
     const subscriber = onAuthStateChanged(auth, (authUser) => {
-      setUser(authUser); // If user is logged in, store user object; otherwise null
-      if (initializing) setInitializing(false); // Stop loading once checked
+      setUser(authUser);
+      if (initializing) setInitializing(false);
     });
-    return subscriber; // Clean up subscription on unmount
-  }, []);
+    return subscriber;
+  }, [initializing]);
 
   // Prevent rendering until Firebase finishes checking the user session
   if (initializing) return null;
