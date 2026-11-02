@@ -1,22 +1,33 @@
-// Import Firestore database instance and Auth service from your configuration file
+// ==========================================
+// USER SERVICE - STATS, TOPIC MASTERY & TROPHIES
+// ==========================================
 import { db, auth } from './firebase';
-// Import Firestore functions to reference documents, read data, create/overwrite documents, update fields, and increment numbers atomically
 import { doc, getDoc, setDoc, updateDoc, increment } from 'firebase/firestore';
 
-// Helper function to safely ensure a user profile exists in Firestore before updating their stats (prevents "No document to update" errors)
-export async function updateUserStats(stats) {
-  // Retrieve the unique ID of the currently logged-in user
+export async function updateUserStats(stats, topicId = null) {
   const userId = auth.currentUser?.uid;
-  if (!userId) return; // Exit early if no user is authenticated
+  if (!userId) return;
 
-  // Create a document reference pointing to the user's document inside the 'users' collection
   const userRef = doc(db, 'users', userId);
-  // Fetch the current document snapshot from Firestore
   const userSnap = await getDoc(userRef);
 
-  // Check if the user document does not exist yet (e.g., fresh start / first-time user)
+  // Prepare base update payload
+  let updatePayload = { ...stats };
+
+  // If a topicId was passed, update topic mastery progress safely
+  if (topicId) {
+    const currentData = userSnap.exists() ? userSnap.data() : {};
+    const existingProgress = currentData.topicProgress || {};
+    const currentTopicCompleted = (existingProgress[topicId]?.completedQuests || 0) + 1;
+
+    updatePayload[`topicProgress.${topicId}`] = {
+      completedQuests: currentTopicCompleted,
+      masteryLevel: currentTopicCompleted >= 3 ? 'Mastered' : 'In Progress',
+    };
+  }
+
   if (!userSnap.exists()) {
-    // Create and initialize the user document with default starting values combined with any passed stats
+    // Initialize brand new user profile document with default values
     await setDoc(userRef, {
       name: 'Adventurer',
       xp: 0,
@@ -24,11 +35,12 @@ export async function updateUserStats(stats) {
       completedQuests: 0,
       hearts: 5,
       streak: 1,
+      trophies: ['First Quest', 'Python Beginner'],
       topicProgress: {},
-      ...stats
+      ...updatePayload
     });
   } else {
-    // If the user document already exists, safely update the fields with the new stats
-    await updateDoc(userRef, stats);
+    // Update existing user document in Firestore
+    await updateDoc(userRef, updatePayload);
   }
 }
