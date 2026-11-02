@@ -1,13 +1,19 @@
-// ==========================================
-// CODEQUEST HOME DASHBOARD & HEART RECHARGE SCREEN
-// ==========================================
+// ============================================================================
+// CODEQUEST HOME DASHBOARD - LIVE TICKING & PERSISTENT HEART TIMER
+// Displays a live countdown timer (MM:SS) that actively ticks every second on screen
+// and synchronizes accurately across app closes using Firestore timestamps.
+// ============================================================================
+
 import React, { useEffect, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { Ionicons, FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons';
 import { db, auth } from '../services/firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
 
-// Import your reusable Draco Mascot component
+// Import persistent heart recovery service helper
+import { checkAndRestoreHearts } from '../services/userService';
+
+// Import reusable Draco Mascot component
 import DracoMascot from '../components/DracoMascot';
 
 export default function HomeScreen({ navigation }) {
@@ -15,7 +21,7 @@ export default function HomeScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [dracoMood, setDracoMood] = useState('idle');
   
-  // Fresh start user initial stats
+  // User statistics state
   const [userData, setUserData] = useState({
     name: 'Adventurer',
     level: 1,
@@ -26,24 +32,54 @@ export default function HomeScreen({ navigation }) {
     questsDone: 0,
     streak: 0,
     hearts: 5,
-    weeklyXp: [0, 0, 0, 0, 0, 0, 0], // M, T, W, T, F, S, S graph bars
+    weeklyXp: [0, 0, 0, 0, 0, 0, 0],
+    lastHeartLossTime: null,
   });
 
-  // 25-minute heart recharge countdown timer state (in seconds)
+  // Countdown state in seconds (25 minutes = 1500 seconds)
   const [timeLeft, setTimeLeft] = useState(25 * 60);
 
-  // --- FETCH LIVE USER DATA FROM FIREBASE FIRESTORE ---
+  // ==========================================================================
+  // FETCH USER DATA & INITIALIZE TIMER ON APP LAUNCH
+  // Syncs hearts with backend and computes exact remaining seconds if out of hearts.
+  // ==========================================================================
   useEffect(() => {
     async function fetchUserHomeData() {
       try {
         const userId = auth.currentUser?.uid;
         if (userId) {
-          const userDoc = await getDoc(doc(db, 'users', userId));
+          // 1. Run backend service check to restore hearts if time passed while closed
+          const currentRestoredHearts = await checkAndRestoreHearts();
+
+          // 2. Fetch latest user document snapshot from Firestore
+          const userRef = doc(db, 'users', userId);
+          const userDoc = await getDoc(userRef);
+
           if (userDoc.exists()) {
             const data = userDoc.data();
             const currentXp = data.xp || 0;
             const calculatedLevel = Math.floor(currentXp / 100) + 1;
             const levelTitle = calculatedLevel >= 5 ? 'Wingling' : calculatedLevel >= 3 ? 'Hatchling' : 'Egg';
+
+            let lossTime = data.lastHeartLossTime || null;
+
+            // SAFETY FIX: If hearts are 0 but no timestamp exists yet, set it now so the timer starts!
+            if (currentRestoredHearts === 0 && !lossTime) {
+              lossTime = Date.now();
+              await updateDoc(userRef, { lastHeartLossTime: lossTime });
+            }
+
+            const REGEN_TIME_MS = 25 * 60 * 1000; // 25 minutes per heart
+
+            // 3. Calculate initial remaining seconds for the countdown display
+            let initialSecondsLeft = 25 * 60;
+            if (lossTime && currentRestoredHearts < 5) {
+              const elapsedMs = Date.now() - lossTime;
+              const remainingMs = REGEN_TIME_MS - (elapsedMs % REGEN_TIME_MS);
+              initialSecondsLeft = Math.max(0, Math.floor(remainingMs / 1000));
+            }
+
+            setTimeLeft(initialSecondsLeft);
 
             setUserData({
               name: data.name || 'Adventurer',
@@ -54,8 +90,9 @@ export default function HomeScreen({ navigation }) {
               points: data.points || currentXp,
               questsDone: data.completedQuests || 0,
               streak: data.streak || 0,
-              hearts: data.hearts !== undefined ? data.hearts : 5,
+              hearts: currentRestoredHearts,
               weeklyXp: data.weeklyXp || [0, 0, 0, 0, 0, 0, 0],
+              lastHeartLossTime: lossTime,
             });
           }
         }
@@ -65,34 +102,49 @@ export default function HomeScreen({ navigation }) {
         setLoading(false);
       }
     }
+
     fetchUserHomeData();
   }, []);
 
-  // --- 25-MINUTE HEART RECHARGE COUNTDOWN TIMER LOGIC ---
+  // ==========================================================================
+  // LIVE TICKING COUNTDOWN INTERVAL
+  // Decrements `timeLeft` every second and re-checks Firestore when hitting zero.
+  // ==========================================================================
   useEffect(() => {
     let timer = null;
-    if (userData.hearts === 0) {
+
+    // Run active countdown whenever hearts are below 5
+    if (userData.hearts < 5) {
       timer = setInterval(() => {
         setTimeLeft((prevTime) => {
           if (prevTime <= 1) {
-            clearInterval(timer);
-            return 25 * 60; // Reset timer upon completion
+            // When timer hits zero, re-check backend restoration
+            checkAndRestoreHearts().then((newHearts) => {
+              setUserData((prev) => ({ 
+                ...prev, 
+                hearts: newHearts,
+                lastHeartLossTime: newHearts >= 5 ? null : prev.lastHeartLossTime 
+              }));
+            });
+            return 25 * 60; // Reset countdown cycle
           }
-          return prevTime - 1;
+          return prevTime - 1; // Tick down by 1 second every interval
         });
       }, 1000);
     }
+
+    // Cleanup interval on unmount to prevent memory leaks
     return () => clearInterval(timer);
   }, [userData.hearts]);
 
-  // Format seconds into MM:SS format
+  // Format seconds into digital clock display (MM:SS)
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins < 10 ? '0' : ''}${mins}:${secs < 10 ? '0' : ''}${secs}`;
   };
 
-  // Handle Draco Tap Interaction
+  // Handle tap interaction on Draco Companion Mascot
   const handleDracoTap = () => {
     setDracoMood('success');
     setTimeout(() => setDracoMood('idle'), 1200);
@@ -106,14 +158,14 @@ export default function HomeScreen({ navigation }) {
     );
   }
 
-  // ==========================================
-  // VIEW 1: OUT OF HEARTS SCREEN (25-Min Timer)[cite: 8]
-  // ==========================================
+  // ==========================================================================
+  // VIEW 1: OUT OF HEARTS SCREEN (Shows Live Ticking Countdown)
+  // ==========================================================================
   if (userData.hearts === 0) {
     return (
       <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
         
-        {/* Out of Hearts Header */}
+        {/* Header Row */}
         <View style={styles.headerRow}>
           <View style={styles.headerIconContainer}>
             <FontAwesome5 name="code" size={18} color="#FFF" />
@@ -136,22 +188,23 @@ export default function HomeScreen({ navigation }) {
 
         <Text style={styles.outOfHeartsHeading}>Out of hearts</Text>
 
-        {/* Timer Card */}
+        {/* Live Ticking Timer Card */}
         <View style={styles.timerCard}>
           <Ionicons name="time-outline" size={22} color="#1F1F1F" style={{ marginBottom: 4 }} />
           <Text style={styles.timerLabel}>NEXT HEART IN</Text>
+          {/* Displays live ticking countdown */}
           <Text style={styles.timerCountdown}>{formatTime(timeLeft)}</Text>
-          <Text style={styles.timerSubtext}>Take a break. Your next quest will be here.</Text>
+          <Text style={styles.timerSubtext}>Watch the countdown tick down live—your energy is restoring!</Text>
         </View>
 
-        {/* Crying Draco Mascot */}
+        {/* Draco Mascot Guidance Bubble */}
         <DracoMascot 
-          message="Mistakes help you learn. Review names and values while we recharge." 
+          message="Mistakes help you learn! Take a quick rest while your energy recharges." 
           mood="sad" 
           onTap={handleDracoTap} 
         />
 
-        {/* Review Button */}
+        {/* Safe Mode Review Button */}
         <TouchableOpacity 
           style={styles.primaryButton}
           onPress={() => navigation.navigate('QuestMap')}
@@ -167,9 +220,9 @@ export default function HomeScreen({ navigation }) {
     );
   }
 
-  // ==========================================
-  // VIEW 2: NORMAL HOME DASHBOARD (Fresh Start)[cite: 7]
-  // ==========================================
+  // ==========================================================================
+  // VIEW 2: MAIN DASHBOARD (Active Quest Progression & Normal Stats)
+  // ==========================================================================
   const levelPercentage = Math.min(100, Math.round((userData.xp / userData.nextLevelXp) * 100));
 
   return (
@@ -189,7 +242,7 @@ export default function HomeScreen({ navigation }) {
         </TouchableOpacity>
       </View>
 
-      {/* Hearts and Streak Row */}
+      {/* Hearts Bar & Streak Counter */}
       <View style={styles.statusBarRow}>
         <View style={styles.heartsRow}>
           {Array.from({ length: 5 }).map((_, i) => (
@@ -218,16 +271,17 @@ export default function HomeScreen({ navigation }) {
         </View>
         <Text style={styles.xpText}>{userData.xp} / {userData.nextLevelXp} XP</Text>
         
+        {/* XP Progress Bar Track */}
         <View style={styles.progressBarTrack}>
           <View style={[styles.progressBarFill, { width: `${levelPercentage}%` }]} />
         </View>
         
         <Text style={styles.levelFooterText}>
-          {userData.nextLevelXp - userData.xp} XP until Level {userData.level + 1} • {userData.xp} total XP
+          {userData.nextLevelXp - userData.xp} XP until Level {userData.level + 1} ({userData.xp} total XP)
         </Text>
       </View>
 
-      {/* Stats Grid (Quest Points & Quests Done) */}
+      {/* Stats Grid: Points & Quests Completed */}
       <View style={styles.statsGridRow}>
         <View style={styles.statBox}>
           <Text style={styles.statNumber}>{userData.points}</Text>
@@ -239,7 +293,7 @@ export default function HomeScreen({ navigation }) {
         </View>
       </View>
 
-      {/* Weekly XP Graph Card */}
+      {/* Weekly XP Activity Bar Graph */}
       <View style={styles.card}>
         <View style={styles.graphHeaderRow}>
           <Text style={styles.graphTitle}>Your week in XP</Text>
@@ -251,7 +305,7 @@ export default function HomeScreen({ navigation }) {
         <View style={styles.barChartContainer}>
           {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((day, index) => {
             const barHeight = Math.max(12, Math.min(70, userData.weeklyXp[index] || 8));
-            const isToday = index === 6; // Highlight today
+            const isToday = index === 6; // Active day highlight
 
             return (
               <View key={index} style={styles.barColumn}>
@@ -269,14 +323,14 @@ export default function HomeScreen({ navigation }) {
         </View>
       </View>
 
-      {/* Draco Mascot Guidance Banner */}
+      {/* Draco Companion Banner */}
       <DracoMascot 
         message="A variable is a name for a value. Let's give your code a memory!" 
         mood={dracoMood} 
         onTap={handleDracoTap} 
       />
 
-      {/* Continue Quest Button */}
+      {/* Primary Navigation Button */}
       <TouchableOpacity 
         style={styles.primaryButton}
         onPress={() => navigation.navigate('QuestMap')}
@@ -288,9 +342,9 @@ export default function HomeScreen({ navigation }) {
   );
 }
 
-// ==========================================
-// STYLISTIC STYLESHEET 
-// ==========================================
+// ============================================================================
+// STYLESHEET (Neubrutalism Design Theme)
+// ============================================================================
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FFD166' },
   contentContainer: { padding: 16, paddingBottom: 40 },
@@ -311,7 +365,7 @@ const styles = StyleSheet.create({
   streakBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, borderWidth: 2, borderColor: '#1F1F1F' },
   streakText: { fontSize: 12, fontWeight: '900', color: '#1F1F1F' },
 
-  // General Cards
+  // Cards
   card: { backgroundColor: '#FFF', padding: 16, borderRadius: 22, borderWidth: 2.5, borderColor: '#1F1F1F', marginBottom: 14, shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.15, shadowRadius: 3, elevation: 3 },
   levelCardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
   levelTitle: { fontSize: 18, fontWeight: '900', color: '#1F1F1F' },
@@ -342,7 +396,7 @@ const styles = StyleSheet.create({
   timerCard: { backgroundColor: '#FFF', padding: 20, borderRadius: 22, borderWidth: 2.5, borderColor: '#1F1F1F', alignItems: 'center', marginBottom: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.15, shadowRadius: 3, elevation: 3 },
   timerLabel: { fontSize: 10, fontWeight: '900', color: '#888', letterSpacing: 1, marginBottom: 4 },
   timerCountdown: { fontSize: 36, fontWeight: '900', color: '#1F1F1F', marginBottom: 6 },
-  timerSubtext: { fontSize: 11, fontWeight: '700', color: '#555' },
+  timerSubtext: { fontSize: 11, fontWeight: '700', color: '#555', textAlign: 'center' },
   footerBackNote: { textAlign: 'center', fontSize: 11, fontWeight: '800', color: '#5C4033', marginTop: 14, marginBottom: 30 },
 
   // Primary Action Button

@@ -1,22 +1,16 @@
 // ============================================================================
-// CODEQUEST EXPANDED FIRESTORE SEEDING SCRIPT
-// Populates 5 core Python topics and structured questions (Quiz, Output Prediction,
-// and Bug-Fix modes) into Cloud Firestore for dynamic gameplay.
+// CODEQUEST DEDICATED MULTI-MODE SEEDING SCRIPT
+// Ensures Quiz, Output Prediction, and Bug-Fix have completely separate questions.
 // ============================================================================
 
-// Import initialized Firestore database instance from your local configuration
 import { db } from './firebase';
-// Import essential Firestore methods for document referencing and writes
-import { collection, doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc } from 'firebase/firestore';
 
 export async function seedExpandedCodeQuestDatabase() {
   try {
-    console.log("Seeding expanded question pool...");
+    console.log("Seeding distinct mode questions...");
 
-    // ------------------------------------------------------------------------
-    // 1. DEFINE CURRICULUM TOPICS ARRAY
-    // Defines metadata for all 5 Python topics stored in the 'topics' collection.
-    // ------------------------------------------------------------------------
+    // 1. TOPICS DATA
     const topics = [
       { id: 'topic_1', title: 'Hello Python', description: 'print() & strings', order: 1 },
       { id: 'topic_2', title: 'Variables', description: 'names & values', order: 2 },
@@ -25,80 +19,97 @@ export async function seedExpandedCodeQuestDatabase() {
       { id: 'topic_5', title: 'Functions', description: 'def & return', order: 5 },
     ];
 
-    // Iteratively upload/overwrite each topic document in Firestore
     for (const topic of topics) {
-      // Path: topics/{topicId}
       await setDoc(doc(db, 'topics', topic.id), topic);
     }
 
-    // ------------------------------------------------------------------------
-    // 2. QUESTION POOL DATASTRUCTURE
-    // Maps each topic ID to an array of questions classified by challengeType:
-    // - 'Quiz' (Multiple choice conceptual questions)
-    // - 'Output Prediction' (Code snippet evaluation)
-    // - 'Bug-Fix' (Debugging and error correction)
-    // ------------------------------------------------------------------------
+    // 2. DEDICATED QUESTION POOL FOR ALL 5 TOPICS & 3 MODES
     const questionPool = {
-      // --- TOPIC 1: HELLO PYTHON ---
+      // ----------------------------------------------------------------------
+      // TOPIC 1: HELLO PYTHON
+      // ----------------------------------------------------------------------
       topic_1: [
-        { id: 't1_q1', challengeType: 'Quiz', difficulty: 'easy', title: 'Basic Output', questionText: 'Which function prints output in Python?', options: ['print()', 'echo()', 'write()', 'display()'], correctAnswer: 'print()', explanation: 'print() is the built-in output function.' },
-        { id: 't1_q2', challengeType: 'Quiz', difficulty: 'easy', title: 'Strings', questionText: 'How do you wrap text strings in Python?', options: ['Quotes (" ")', 'Parentheses (( ))', 'Brackets ([ ])', 'Braces ({ })'], correctAnswer: 'Quotes (" ")', explanation: 'Strings require single or double quotes.' },
-        { id: 't1_q3', challengeType: 'Output Prediction', difficulty: 'easy', title: 'String Join', codeSnippet: 'print("Hello" + "Python")', options: ['HelloPython', 'Hello Python', 'Error', 'Hello+Python'], correctAnswer: 'HelloPython', explanation: 'The + operator concatenates strings directly.' },
-        { id: 't1_q4', challengeType: 'Output Prediction', difficulty: 'medium', title: 'Multiplication', codeSnippet: 'print("A" * 3)', options: ['AAA', 'A3', 'Error', 'AA'], correctAnswer: 'AAA', explanation: 'Multiplying a string repeats it.' },
-        { id: 't1_q5', challengeType: 'Bug-Fix', difficulty: 'medium', title: 'Fix print syntax', codeSnippet: 'prnt("Hi")', options: ['print("Hi")', 'echo("Hi")', 'printf("Hi")'], correctAnswer: 'print("Hi")', explanation: 'Correct spelling is print.' },
+        // --- QUIZ MODE (Conceptual Theory) ---
+        { id: 't1_q1', challengeType: 'Quiz', difficulty: 'easy', title: 'Basic Output Function', questionText: 'Which built-in function outputs text to the console in Python?', options: ['print()', 'echo()', 'write()', 'display()'], correctAnswer: 'print()', explanation: 'print() is the standard Python output function.' },
+        { id: 't1_q2', challengeType: 'Quiz', difficulty: 'easy', title: 'String Literals', questionText: 'How must text strings be enclosed in Python?', options: ['Single or double quotes', 'Curly braces', 'Angle brackets', 'Parentheses only'], correctAnswer: 'Single or double quotes', explanation: 'Python accepts single (\'\') or double ("") quotes for strings.' },
+
+        // --- OUTPUT PREDICTION MODE (Predict exact result) ---
+        { id: 't1_q3', challengeType: 'Output Prediction', difficulty: 'easy', title: 'String Concatenation', codeSnippet: 'print("Code" + "Quest")', questionText: 'What will be the output of this code snippet?', options: ['CodeQuest', 'Code Quest', 'Error', 'Code+Quest'], correctAnswer: 'CodeQuest', explanation: 'The + operator joins strings directly without spaces.' },
+        { id: 't1_q4', challengeType: 'Output Prediction', difficulty: 'medium', title: 'String Multiplication', codeSnippet: 'print("Py" * 3)', questionText: 'What is printed to the screen?', options: ['PyPyPy', 'Py3', 'Error', 'Py Py Py'], correctAnswer: 'PyPyPy', explanation: 'Multiplying a string by an integer repeats it.' },
+
+        // --- BUG-FIX MODE (Identify & Fix the syntax error) ---
+        { id: 't1_q5', challengeType: 'Bug-Fix', difficulty: 'easy', title: 'Spelling Error in Output', codeSnippet: 'prnt("Hello World")', questionText: 'Which option fixes the NameError in this code?', options: ['print("Hello World")', 'echo("Hello World")', 'console.log("Hello World")'], correctAnswer: 'print("Hello World")', explanation: 'Fix the typo "prnt" to "print".' },
+        { id: 't1_q6', challengeType: 'Bug-Fix', difficulty: 'medium', title: 'Unclosed String Quote', codeSnippet: 'print("Hello Python)', questionText: 'How do you fix the SyntaxError in this statement?', options: ['print("Hello Python")', 'print(\'Hello Python")', 'print(Hello Python)'], correctAnswer: 'print("Hello Python")', explanation: 'Strings must have matching opening and closing quotes.' },
       ],
 
-      // --- TOPIC 2: VARIABLES ---
+      // ----------------------------------------------------------------------
+      // TOPIC 2: VARIABLES
+      // ----------------------------------------------------------------------
       topic_2: [
-        { id: 't2_q1', challengeType: 'Quiz', difficulty: 'easy', title: 'Naming Rules', questionText: 'Which variable name is invalid?', options: ['2my_var', 'my_var', '_var', 'var2'], correctAnswer: '2my_var', explanation: 'Variables cannot start with numbers.' },
-        { id: 't2_q2', challengeType: 'Quiz', difficulty: 'hard', title: 'Data Types', questionText: 'What type is result of 5 / 2 in Python 3?', options: ['float', 'int', 'str', 'bool'], correctAnswer: 'float', explanation: 'Division / always returns a float.' },
-        { id: 't2_q3', challengeType: 'Output Prediction', difficulty: 'easy', title: 'Variable Addition', codeSnippet: 'x = 10\nx = x + 5\nprint(x)', options: ['15', '10', '5', 'Error'], correctAnswer: '15', explanation: '10 + 5 evaluates to 15.' },
-        { id: 't2_q4', challengeType: 'Output Prediction', difficulty: 'medium', title: 'Reassignment', codeSnippet: 'a = 4\na = a * 2\nprint(a)', options: ['8', '4', '6', 'Error'], correctAnswer: '8', explanation: '4 multiplied by 2 is 8.' },
-        { id: 't2_q5', challengeType: 'Bug-Fix', difficulty: 'medium', title: 'Case Sensitivity', codeSnippet: 'name = "Alex"\nprint(Name)', options: ['print(name)', 'print("Name")', 'print(NAME)'], correctAnswer: 'print(name)', explanation: 'Python is case-sensitive; name != Name.' },
+        // --- QUIZ MODE ---
+        { id: 't2_q1', challengeType: 'Quiz', difficulty: 'easy', title: 'Variable Naming Rules', questionText: 'Which of the following is an INVALID variable name in Python?', options: ['1st_player', 'player_1', '_score', 'playerOne'], correctAnswer: '1st_player', explanation: 'Variable names cannot start with a digit.' },
+        { id: 't2_q2', challengeType: 'Quiz', difficulty: 'medium', title: 'Division Data Type', questionText: 'What data type is returned by the division operator (/) in Python 3?', options: ['float', 'int', 'str', 'bool'], correctAnswer: 'float', explanation: 'Division using / always yields a floating-point number.' },
+
+        // --- OUTPUT PREDICTION MODE ---
+        { id: 't2_q3', challengeType: 'Output Prediction', difficulty: 'easy', title: 'Variable Reassignment', codeSnippet: 'x = 10\nx = x + 5\nprint(x)', questionText: 'What value is stored and printed for x?', options: ['15', '10', '5', 'Error'], correctAnswer: '15', explanation: 'x starts at 10, then 5 is added, resulting in 15.' },
+        { id: 't2_q4', challengeType: 'Output Prediction', difficulty: 'medium', title: 'Multiple Variables', codeSnippet: 'a = 2\nb = 3\nprint(a * b + a)', questionText: 'Predict the calculated output:', options: ['8', '6', '10', ' Error'], correctAnswer: '8', explanation: 'Multiplication happens first: (2 * 3) + 2 = 8.' },
+
+        // --- BUG-FIX MODE ---
+        { id: 't2_q5', challengeType: 'Bug-Fix', difficulty: 'medium', title: 'Case Sensitivity Bug', codeSnippet: 'user_score = 100\nprint(User_score)', questionText: 'Fix the NameError caused by case sensitivity:', options: ['print(user_score)', 'print("User_score")', 'user_score = User_score'], correctAnswer: 'print(user_score)', explanation: 'Python is case-sensitive; user_score and User_score are different.' },
       ],
 
-      // --- TOPIC 3: CONDITIONALS ---
+      // ----------------------------------------------------------------------
+      // TOPIC 3: CONDITIONALS
+      // ----------------------------------------------------------------------
       topic_3: [
-        { id: 't3_q1', challengeType: 'Quiz', difficulty: 'easy', title: 'Conditional Keyword', questionText: 'Which keyword checks alternate conditions?', options: ['elif', 'else if', 'elseif', 'then'], correctAnswer: 'elif', explanation: 'Python uses elif for secondary conditions.' },
-        { id: 't3_q2', challengeType: 'Quiz', difficulty: 'medium', title: 'Logical Operators', questionText: 'Which operator means logical AND?', options: ['and', '&&', '&', 'AND'], correctAnswer: 'and', explanation: 'Python uses the word and.' },
-        { id: 't3_q3', challengeType: 'Output Prediction', difficulty: 'medium', title: 'If Branch', codeSnippet: 'score = 80\nif score >= 50:\n    print("Pass")\nelse:\n    print("Fail")', options: ['Pass', 'Fail', '80', 'Error'], correctAnswer: 'Pass', explanation: '80 >= 50 is True.' },
-        { id: 't3_q4', challengeType: 'Output Prediction', difficulty: 'hard', title: 'Nested If', codeSnippet: 'x = 10\nif x > 5:\n    if x < 15:\n        print("Mid")', options: ['Mid', '10', 'None', 'Error'], correctAnswer: 'Mid', explanation: 'Both conditions evaluate to True.' },
-        { id: 't3_q5', challengeType: 'Bug-Fix', difficulty: 'hard', title: 'Missing Colon', codeSnippet: 'if x > 5\n    print("Yes")', options: ['if x > 5:', 'if (x > 5)', 'if x > 5 then:'], correctAnswer: 'if x > 5:', explanation: 'Compound statements require a trailing colon.' },
+        // --- QUIZ MODE ---
+        { id: 't3_q1', challengeType: 'Quiz', difficulty: 'easy', title: 'Elif Keyword', questionText: 'Which keyword handles secondary conditions in Python?', options: ['elif', 'else if', 'elseif', 'then'], correctAnswer: 'elif', explanation: 'Python uses elif instead of else if.' },
+
+        // --- OUTPUT PREDICTION MODE ---
+        { id: 't3_q2', challengeType: 'Output Prediction', difficulty: 'medium', title: 'If-Else Evaluation', codeSnippet: 'score = 75\nif score >= 50:\n    print("Pass")\nelse:\n    print("Fail")', questionText: 'What output will be displayed?', options: ['Pass', 'Fail', '75', 'Error'], correctAnswer: 'Pass', explanation: '75 >= 50 is True, so the if block executes.' },
+
+        // --- BUG-FIX MODE ---
+        { id: 't3_q3', challengeType: 'Bug-Fix', difficulty: 'hard', title: 'Missing Colon in If Statement', codeSnippet: 'if age >= 18\n    print("Adult")', questionText: 'Select the fix for this SyntaxError:', options: ['if age >= 18:', 'if (age >= 18)', 'if age >= 18 then:'], correctAnswer: 'if age >= 18:', explanation: 'Conditionals in Python require a colon (:) at the end of the line.' },
       ],
 
-      // --- TOPIC 4: LOOPS ---
+      // ----------------------------------------------------------------------
+      // TOPIC 4: LOOPS
+      // ----------------------------------------------------------------------
       topic_4: [
-        { id: 't4_q1', challengeType: 'Quiz', difficulty: 'easy', title: 'Loop Break', questionText: 'Keyword to exit a loop immediately?', options: ['break', 'stop', 'exit', 'halt'], correctAnswer: 'break', explanation: 'break exits loops instantly.' },
-        { id: 't4_q2', challengeType: 'Quiz', difficulty: 'medium', title: 'For vs While', questionText: 'When should you use a for loop?', options: ['When iterating over a known sequence', 'Only for infinite loops', 'Never in Python', 'For random execution'], correctAnswer: 'When iterating over a known sequence', explanation: 'For loops iterate over collections/ranges.' },
-        { id: 't4_q3', challengeType: 'Output Prediction', difficulty: 'easy', title: 'Range Loop', codeSnippet: 'for i in range(3):\n    print(i)', options: ['0, 1, 2', '1, 2, 3', '0, 1, 2, 3', '3'], correctAnswer: '0, 1, 2', explanation: 'range(3) stops right before 3.' },
-        { id: 't4_q4', challengeType: 'Output Prediction', difficulty: 'hard', title: 'Step Range', codeSnippet: 'for i in range(1, 6, 2):\n    print(i)', options: ['1, 3, 5', '1, 2, 3', '2, 4, 6', '1, 6'], correctAnswer: '1, 3, 5', explanation: 'Step size 2 skips alternate numbers.' },
-        { id: 't4_q5', challengeType: 'Bug-Fix', difficulty: 'medium', title: 'Infinite Loop', codeSnippet: 'c = 0\nwhile c < 2:\n    print(c)', options: ['c += 1', 'c = 0', 'break'], correctAnswer: 'c += 1', explanation: 'Loop variable must increment to avoid infinite execution.' },
+        // --- QUIZ MODE ---
+        { id: 't4_q1', challengeType: 'Quiz', difficulty: 'easy', title: 'Loop Exit Keyword', questionText: 'Which statement immediately terminates a loop?', options: ['break', 'stop', 'exit', 'continue'], correctAnswer: 'break', explanation: 'break immediately exits the active loop body.' },
+
+        // --- OUTPUT PREDICTION MODE ---
+        { id: 't4_q2', challengeType: 'Output Prediction', difficulty: 'medium', title: 'Range Function Output', codeSnippet: 'for i in range(3):\n    print(i, end=" ")', questionText: 'What numbers are printed by this range loop?', options: ['0 1 2', '1 2 3', '0 1 2 3', '3'], correctAnswer: '0 1 2', explanation: 'range(3) generates numbers 0, 1, and 2.' },
+
+        // --- BUG-FIX MODE ---
+        { id: 't4_q3', challengeType: 'Bug-Fix', difficulty: 'medium', title: 'Infinite While Loop', codeSnippet: 'count = 0\nwhile count < 3:\n    print(count)', questionText: 'How do you fix this infinite loop?', options: ['Add count += 1 inside the loop', 'Change count < 3 to count > 3', 'Remove count = 0'], correctAnswer: 'Add count += 1 inside the loop', explanation: 'Incrementing the counter ensures the while condition becomes false.' },
       ],
 
-      // --- TOPIC 5: FUNCTIONS ---
+      // ----------------------------------------------------------------------
+      // TOPIC 5: FUNCTIONS
+      // ----------------------------------------------------------------------
       topic_5: [
-        { id: 't5_q1', challengeType: 'Quiz', difficulty: 'easy', title: 'Function Keyword', questionText: 'Keyword used to define a function?', options: ['def', 'function', 'fn', 'define'], correctAnswer: 'def', explanation: 'def declares a function.' },
-        { id: 't5_q2', challengeType: 'Quiz', difficulty: 'medium', title: 'Parameters', questionText: 'Variables defined inside function parentheses are called:', options: ['Parameters / Arguments', 'Globals', 'Constants', 'Classes'], correctAnswer: 'Parameters / Arguments', explanation: 'Passed values are parameters.' },
-        { id: 't5_q3', challengeType: 'Output Prediction', difficulty: 'medium', title: 'Return Value', codeSnippet: 'def add(a, b):\n    return a + b\nprint(add(2, 3))', options: ['5', '23', 'None', 'Error'], correctAnswer: '5', explanation: 'Returns the sum of 2 and 3.' },
-        { id: 't5_q4', challengeType: 'Output Prediction', difficulty: 'hard', title: 'Scope', codeSnippet: 'x = 5\ndef f():\n    x = 10\nf()\nprint(x)', options: ['5', '10', 'Error', 'None'], correctAnswer: '5', explanation: 'Local variable x does not overwrite global x.' },
-        { id: 't5_q5', challengeType: 'Bug-Fix', difficulty: 'hard', title: 'Missing Return', codeSnippet: 'def get_val():\n    x = 10', options: ['return x', 'give x', 'output x'], correctAnswer: 'return x', explanation: 'Functions return None unless specified.' },
+        // --- QUIZ MODE ---
+        { id: 't5_q1', challengeType: 'Quiz', difficulty: 'easy', title: 'Function Definition Keyword', questionText: 'Which keyword is used to define a function in Python?', options: ['def', 'function', 'fn', 'define'], correctAnswer: 'def', explanation: 'def declares a function definition.' },
+
+        // --- OUTPUT PREDICTION MODE ---
+        { id: 't5_q2', challengeType: 'Output Prediction', difficulty: 'medium', title: 'Return Statement Output', codeSnippet: 'def add(a, b):\n    return a + b\nprint(add(4, 5))', questionText: 'What is printed by calling add(4, 5)?', options: ['9', '45', 'None', 'Error'], correctAnswer: '9', explanation: 'The function returns 4 + 5, which evaluates to 9.' },
+
+        // --- BUG-FIX MODE ---
+        { id: 't5_q3', challengeType: 'Bug-Fix', difficulty: 'hard', title: 'Missing Return Keyword', codeSnippet: 'def get_double(x):\n    result = x * 2\n\nprint(get_double(5))', questionText: 'Why does this print None, and how do you fix it?', options: ['Add "return result" inside get_double', 'Change print to output', 'Remove x parameter'], correctAnswer: 'Add "return result" inside get_double', explanation: 'Functions without an explicit return statement return None by default.' },
       ]
     };
 
-    // ------------------------------------------------------------------------
-    // 3. UPLOAD TO FIRESTORE SUB-COLLECTIONS
-    // Iterates through each topic and populates its nested 'questions' sub-collection.
-    // Path format: topics/{topicId}/questions/{questionId}
-    // ------------------------------------------------------------------------
+    // 3. SEED SUB-COLLECTIONS
     for (const [topicId, questions] of Object.entries(questionPool)) {
       for (const q of questions) {
         await setDoc(doc(db, 'topics', topicId, 'questions', q.id), q);
       }
     }
 
-    console.log("🎉 Expanded database successfully seeded!");
+    console.log("🎉 All modes seeded with unique questions!");
   } catch (error) {
-    // Catch network failures or security rule permission blocks
     console.error("Error seeding database:", error);
   }
 }

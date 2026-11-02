@@ -1,7 +1,7 @@
 // ============================================================================
-// CODEQUEST QUIZ SESSION SCREEN - PRODUCTION & SYNCED VERSION
-// Handles dynamic question fetching per challenge mode, option shuffling,
-// real-time heart deduction, difficulty-weighted scoring, and Firestore updates.
+// CODEQUEST QUIZ SESSION SCREEN - MODE-SPECIFIC & NON-REPEATING
+// Handles fetching mode-specific questions from Firestore, shuffling options,
+// tracking live hearts, evaluating answers, and updating user profile progression.
 // ============================================================================
 
 import React, { useEffect, useState } from 'react';
@@ -21,36 +21,36 @@ import { updateUserStats } from '../services/userService';
 import DracoMascot from '../components/DracoMascot';
 
 export default function QuizSessionScreen({ route, navigation }) {
-  // Extract route parameters passed from navigation (defaults to topic_2 / Quiz mode)
+  // Extract navigation parameters (topicId, challengeMode, and daily challenge flag)
   const { topicId, challengeMode, isDaily } = route.params || { 
-    topicId: 'topic_2', 
+    topicId: 'topic_1', 
     challengeMode: 'Quiz', 
     isDaily: false 
   };
 
   // ==========================================================================
-  // STATE MANAGEMENT
+  // COMPONENT STATE MANAGEMENT
   // ==========================================================================
-  const [questions, setQuestions] = useState([]);               // Questions loaded for this session
-  const [currentIndex, setCurrentIndex] = useState(0);           // Current question index pointer
-  const [shuffledOptions, setShuffledOptions] = useState([]);   // Shuffled option choices for current question
-  const [selectedOption, setSelectedOption] = useState(null);   // Option selected by user
-  const [isAnswerChecked, setIsAnswerChecked] = useState(false); // Controls feedback banner display
-  const [isCorrectAnswer, setIsCorrectAnswer] = useState(false); // Result of user's selection
+  const [questions, setQuestions] = useState([]);               // Filtered and randomized questions for the session
+  const [currentIndex, setCurrentIndex] = useState(0);           // Current question position tracker (0-4)
+  const [shuffledOptions, setShuffledOptions] = useState([]);   // Randomized multiple-choice options for current question
+  const [selectedOption, setSelectedOption] = useState(null);   // Option chosen by the user
+  const [isAnswerChecked, setIsAnswerChecked] = useState(false); // Flag tracking if the answer has been submitted
+  const [isCorrectAnswer, setIsCorrectAnswer] = useState(false); // Tracks if the user's answer was correct
   
-  const [hearts, setHearts] = useState(5);                       // Live heart count (synced with Firestore)
-  const [score, setScore] = useState(0);                         // Number of correct answers in current session
+  const [hearts, setHearts] = useState(5);                       // Active heart count synced with Firestore
+  const [score, setScore] = useState(0);                         // Total correct answers in this session
   const [earnedPoints, setEarnedPoints] = useState(0);           // Cumulative difficulty-weighted points
-  const [loading, setLoading] = useState(true);                  // Loading state while querying Firestore
-  const [isFinished, setIsFinished] = useState(false);           // Session complete flag
+  const [loading, setLoading] = useState(true);                  // Loading spinner indicator while fetching Firestore data
+  const [isFinished, setIsFinished] = useState(false);           // Flag indicating completion of all questions
 
-  // Draco mascot reaction and hint speech bubble state
+  // Draco mascot emotional state and speech bubble text
   const [dracoMood, setDracoMood] = useState('idle');
   const [dracoMessage, setDracoMessage] = useState("Read carefully and pick the correct option!");
 
   // ==========================================================================
-  // UTILITY: FISHER-YATES SHUFFLE ALGORITHM
-  // Ensures choices and question order are randomized and non-repeating.
+  // FISHER-YATES SHUFFLE ALGORITHM
+  // Randomizes arrays so choices and questions never appear in a fixed order.
   // ==========================================================================
   const shuffleArray = (array) => {
     let shuffled = [...array];
@@ -62,8 +62,8 @@ export default function QuizSessionScreen({ route, navigation }) {
   };
 
   // ==========================================================================
-  // FIRESTORE DATA INITIALIZATION
-  // Fetches current user hearts and queries sub-collection questions by mode.
+  // DATA FETCHING & STRICT MODE FILTERING
+  // Queries Firestore sub-collection and filters strictly by challengeMode.
   // ==========================================================================
   useEffect(() => {
     async function loadQuizData() {
@@ -77,39 +77,41 @@ export default function QuizSessionScreen({ route, navigation }) {
           }
         }
 
-        // 2. Fetch all question documents under topics/{topicId}/questions
+        // 2. Fetch all questions inside the specific topic sub-collection
         const querySnapshot = await getDocs(collection(db, 'topics', topicId, 'questions'));
         let allQuestions = querySnapshot.docs.map(doc => doc.data());
 
-        // 3. STRICT MODE FILTERING: Ensure Bug-Fix, Output Prediction, or Quiz get their exact matching questions
-        let filtered = allQuestions.filter(
-          q => q.challengeType?.toLowerCase().trim() === challengeMode?.toLowerCase().trim()
-        );
-        
-        // Safety net fallback if specific mode filter yields zero items
+        // 3. STRICT MODE FILTER: Normalize strings to compare challenge types exactly ('Quiz', 'Output Prediction', 'Bug-Fix')
+        const targetMode = challengeMode ? challengeMode.toLowerCase().trim() : 'quiz';
+        let filtered = allQuestions.filter(q => {
+          const type = q.challengeType ? q.challengeType.toLowerCase().trim() : '';
+          return type === targetMode;
+        });
+
+        // Fallback safety net if exact mode filter returns empty
         if (filtered.length === 0) {
           filtered = allQuestions;
         }
 
-        // 4. Randomize question set and pick up to 5 unique items
+        // 4. Randomize and slice up to 5 unique questions to avoid repetition
         const randomized = shuffleArray(filtered).slice(0, Math.min(5, filtered.length));
         setQuestions(randomized);
 
-        // 5. Shuffle options for the initial question
+        // 5. Shuffle option choices for the first question
         if (randomized.length > 0) {
           setShuffledOptions(shuffleArray(randomized[0].options));
         }
       } catch (error) {
-        console.error("Error loading questions:", error);
+        console.error("Error fetching mode questions:", error);
       } finally {
-        setLoading(false);
+        setLoading(false); // Dismiss loading indicator
       }
     }
     loadQuizData();
   }, [topicId, challengeMode]);
 
   // ==========================================================================
-  // ANSWER CHECKING & HEART DEDUCTION HANDLER
+  // ANSWER VERIFICATION & HEART DEDUCTION LOGIC
   // ==========================================================================
   const handleCheckAnswer = async () => {
     if (!selectedOption) {
@@ -125,22 +127,23 @@ export default function QuizSessionScreen({ route, navigation }) {
     const userId = auth.currentUser?.uid;
 
     if (correct) {
-      // Correct answer: trigger happy Draco reaction and add points by difficulty level
+      // Correct answer: trigger happy Draco mood and increase score/points
       setDracoMood('success');
       setDracoMessage(currentQ.explanation);
       setScore(prev => prev + 1);
 
-      // Points: easy = 10, medium = 20, hard = 30
+      // Award points based on question difficulty: easy = 10, medium = 20, hard = 30
       const diffPoints = currentQ.difficulty === 'hard' ? 30 : currentQ.difficulty === 'medium' ? 20 : 10;
       setEarnedPoints(prev => prev + diffPoints);
     } else {
-      // Incorrect answer: trigger sad Draco reaction and deduct 1 heart live in Firestore
+      // Incorrect answer: trigger sad Draco mood and deduct 1 live heart
       setDracoMood('sad');
       setDracoMessage(`Incorrect. Correct answer: ${currentQ.correctAnswer}. ${currentQ.explanation}`);
       
       const newHearts = Math.max(0, hearts - 1);
       setHearts(newHearts);
       
+      // Update heart count immediately in Firestore
       if (userId) {
         await updateUserStats({ hearts: newHearts });
       }
@@ -148,28 +151,28 @@ export default function QuizSessionScreen({ route, navigation }) {
   };
 
   // ==========================================================================
-  // NEXT QUESTION & QUEST COMPLETION HANDLER
-  // Updates user XP, Points, Completed Quests, and Topic Progress on completion.
+  // PROGRESSION HANDLER: NEXT QUESTION OR QUEST SUMMARY
   // ==========================================================================
   const handleNextQuestion = async () => {
+    // Reset question-level interactive states
     setIsAnswerChecked(false);
     setSelectedOption(null);
     setDracoMood('idle');
     setDracoMessage("Keep going!");
 
     if (currentIndex + 1 < questions.length) {
-      // Advance to next question and shuffle its choices
+      // Load next question in array and shuffle its answer choices
       const nextQ = questions[currentIndex + 1];
       setShuffledOptions(shuffleArray(nextQ.options));
       setCurrentIndex(prev => prev + 1);
     } else {
-      // End of quiz: display summary and sync total cumulative rewards to Firestore
+      // End of session: trigger summary view and sync cumulative rewards to Firestore
       setIsFinished(true);
-      const xpEarned = isDaily ? 40 : 20;
+      const xpEarned = isDaily ? 40 : 20; // Daily challenges yield double XP
       
       const userId = auth.currentUser?.uid;
       if (userId) {
-        // Sync stats, completed quests, and update topic mastery / trophy shelf
+        // Atomically increment XP, points, completed quests, and update topic mastery / trophy shelf
         await updateUserStats({
           xp: increment(xpEarned),
           points: increment(earnedPoints),
@@ -191,12 +194,11 @@ export default function QuizSessionScreen({ route, navigation }) {
   }
 
   // ==========================================================================
-  // RENDER: QUEST COMPLETION SUMMARY CARD
-  // Displays final score, dynamic star rating (1-3 stars), and earned rewards.
+  // RENDER: QUEST COMPLETE SUMMARY SCREEN
   // ==========================================================================
   if (isFinished) {
     const earnedXp = isDaily ? 40 : 20;
-    const starsEarned = score >= 4 ? 3 : score >= 2 ? 2 : 1;
+    const starsEarned = score >= 4 ? 3 : score >= 2 ? 2 : 1; // Calculate star rating based on correct answers
 
     return (
       <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
@@ -204,7 +206,8 @@ export default function QuizSessionScreen({ route, navigation }) {
           <Text style={styles.summaryTitle}>Quest Complete! 🎉</Text>
           <Text style={styles.summaryScoreText}>Score: {score} / {questions.length}</Text>
           
-          {/* Dynamic 3-Star Rating Row */}
+          {/* Dynamic 3-Star Rating Display */}
+          <div /> {/* Semantic spacer wrapper */}
           <View style={styles.starsRow}>
             {Array.from({ length: 3 }).map((_, i) => (
               <Ionicons 
@@ -217,7 +220,7 @@ export default function QuizSessionScreen({ route, navigation }) {
             ))}
           </View>
 
-          {/* Reward Pill */}
+          {/* XP & Points Reward Pill */}
           <View style={styles.xpRewardPill}>
             <Text style={styles.xpRewardText}>+{earnedXp} XP • +{earnedPoints} Points Earned</Text>
           </View>
@@ -232,17 +235,17 @@ export default function QuizSessionScreen({ route, navigation }) {
     );
   }
 
-  // Calculate current progress bar percentage
+  // Active question references and progress calculation
   const currentQ = questions[currentIndex];
   const progressPercentage = ((currentIndex + 1) / questions.length) * 100;
 
   // ==========================================================================
-  // RENDER: ACTIVE QUESTION UI
+  // RENDER: ACTIVE QUESTION INTERFACE
   // ==========================================================================
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
       
-      {/* Top Header Row: Mode Badge, Question Counter & Live Hearts Display */}
+      {/* Top Header Row: Challenge Mode Title, Counter & Live Hearts Status */}
       <View style={styles.headerRow}>
         <View style={styles.headerIconContainer}>
           <FontAwesome5 name="code" size={18} color="#FFF" />
@@ -252,7 +255,7 @@ export default function QuizSessionScreen({ route, navigation }) {
           <Text style={styles.headerSubtitle}>QUESTION {currentIndex + 1} OF {questions.length}</Text>
         </View>
         
-        {/* Live Heart Counter (1 to 5 Hearts) */}
+        {/* Live Heart Counter Display (1 to 5 Hearts) */}
         <View style={styles.heartsRow}>
           {Array.from({ length: 5 }).map((_, i) => (
             <Ionicons 
@@ -266,16 +269,16 @@ export default function QuizSessionScreen({ route, navigation }) {
         </View>
       </View>
 
-      {/* Neubrutalist Progress Bar */}
+      {/* Neubrutalist Progress Bar Track */}
       <View style={styles.progressBarTrack}>
         <View style={[styles.progressBarFill, { width: `${progressPercentage}%` }]} />
       </View>
 
-      {/* Main Question / Code Snippet Card */}
+      {/* Main Question / Code Terminal Card */}
       <View style={styles.questionCard}>
         <Text style={styles.cardMainTitle}>{currentQ.title}</Text>
         
-        {/* Render dark code terminal box if snippet is present */}
+        {/* Renders code snippet block if available (used for Output Prediction & Bug-Fix) */}
         {currentQ.codeSnippet && (
           <View style={styles.terminalBox}>
             <Text style={styles.terminalCode}>{currentQ.codeSnippet}</Text>
@@ -285,9 +288,9 @@ export default function QuizSessionScreen({ route, navigation }) {
         {currentQ.questionText && <Text style={styles.promptText}>{currentQ.questionText}</Text>}
       </View>
 
-      {/* Shuffled Multiple Choice Options (A, B, C, D) */}
+      {/* Shuffled Multiple-Choice Option Buttons (A, B, C, D) */}
       {shuffledOptions.map((option, index) => {
-        const letter = String.fromCharCode(65 + index); // Converts index 0..3 to A..D
+        const letter = String.fromCharCode(65 + index); // Converts index 0..3 to letters A..D
         const isSelected = selectedOption === option;
 
         return (
@@ -302,10 +305,10 @@ export default function QuizSessionScreen({ route, navigation }) {
         );
       })}
 
-      {/* Draco Companion Mascot Component */}
+      {/* Interactive Draco Companion Mascot */}
       <DracoMascot message={dracoMessage} mood={dracoMood} />
 
-      {/* Footer Action: Check Answer Button or Result Feedback Card */}
+      {/* Action Footer: Check Answer Button or Result Feedback Banner */}
       {!isAnswerChecked ? (
         <TouchableOpacity style={styles.primaryButton} onPress={handleCheckAnswer}>
           <Text style={styles.primaryButtonText}>Check Answer →</Text>
@@ -324,7 +327,7 @@ export default function QuizSessionScreen({ route, navigation }) {
 }
 
 // ============================================================================
-// STYLESHEET (Neubrutalism Visual Theme)
+// STYLESHEET (Neubrutalism Design Theme)
 // ============================================================================
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FFD166' },
