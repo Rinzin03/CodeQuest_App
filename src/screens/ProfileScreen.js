@@ -1,22 +1,50 @@
+
 // ==========================================
 // IMPORTS & DEPENDENCIES
 // ==========================================
-import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
-import { Ionicons, FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons';
+import React, { useState, useCallback } from 'react';
+
+import {
+  View,
+  Text,
+  ScrollView,
+  TouchableOpacity,
+  StyleSheet,
+  ActivityIndicator
+} from 'react-native';
+
+import {
+  Ionicons,
+  FontAwesome5
+} from '@expo/vector-icons';
+
+// useFocusEffect allows the screen to refresh whenever it becomes active
+import { useFocusEffect } from '@react-navigation/native';
+
+// Firebase imports
 import { db, auth } from '../services/firebase';
 import { doc, getDoc } from 'firebase/firestore';
+
+// Draco mascot component
 import DracoMascot from '../components/DracoMascot';
 
-export default function ProfileScreen({ navigation }) {
-  // ==========================================
-  // STATE HOOKS FOR TABS, LOADING & MASCOT MOOD
-  // ==========================================
-  const [activeTab, setActiveTab] = useState('profile'); // Switches between 'profile' and 'trophies'
-  const [loading, setLoading] = useState(true); // Controls loading spinner while fetching Firebase data
-  const [dracoMood, setDracoMood] = useState('idle'); // Tracks Draco's facial reaction / animation mood
 
-  // Initial adventurer state (first-time opening state with 0 XP)
+export default function ProfileScreen({ navigation }) {
+
+  // ==========================================
+  // STATE MANAGEMENT
+  // ==========================================
+
+  // Controls switching between Profile and Trophy Shelf
+  const [activeTab, setActiveTab] = useState('profile');
+
+  // Displays loading indicator while fetching Firebase data
+  const [loading, setLoading] = useState(true);
+
+  // Controls Draco mascot's mood and animation
+  const [dracoMood, setDracoMood] = useState('idle');
+
+  // Stores the authenticated user's profile information
   const [userData, setUserData] = useState({
     name: 'New Adventurer',
     level: 1,
@@ -25,297 +53,888 @@ export default function ProfileScreen({ navigation }) {
     nextLevelXp: 100,
     completedQuests: 0,
     points: 0,
-    evolutionTrack: 'Lv 1 Egg → Lv 3 Hatchling → Lv 5 Wingling',
+    evolutionTrack: 'Lv 1 Egg → Lv 3 Hatchling → Lv 5 Wingling'
   });
 
-  // Initial topic mastery progress state (starts at 0% for brand new users)
+  // Stores progress for individual Python learning topics
   const [topicMastery, setTopicMastery] = useState([
     { title: 'Hello Python', progress: 0 },
     { title: 'Variables', progress: 0 },
     { title: 'Conditionals', progress: 0 },
     { title: 'Loops', progress: 0 },
-    { title: 'Functions', progress: 0 },
+    { title: 'Functions', progress: 0 }
   ]);
 
-  // ==========================================
-  // FETCH LIVE USER DATA FROM FIREBASE FIRESTORE
-  // ==========================================
-  useEffect(() => {
-    async function fetchLiveProfileData() {
-      try {
-        const userId = auth.currentUser?.uid;
-        if (userId) {
-          // Retrieve the authenticated user's document from the Firestore 'users' collection
-          const userDoc = await getDoc(doc(db, 'users', userId));
-          if (userDoc.exists()) {
-            const data = userDoc.data();
-            const currentXp = data.xp || 0;
-            
-            // Calculate level dynamically based on XP milestones (Every 100 XP = 1 Level)
-            const calculatedLevel = Math.floor(currentXp / 100) + 1;
-            const levelTitle = calculatedLevel >= 5 ? 'Wingling' : calculatedLevel >= 3 ? 'Hatchling' : 'Egg';
+  // Stores trophy information retrieved from Firebase
+  const [trophies, setTrophies] = useState([]);
 
-            // Update user state with live data retrieved from Firestore
+
+  // ==========================================
+  // FETCH PROFILE DATA WHEN SCREEN IS FOCUSED
+  // ==========================================
+
+  // useFocusEffect runs whenever the user navigates to this screen.
+  // Unlike useEffect, it also refreshes when the user returns to the tab.
+  useFocusEffect(
+    useCallback(() => {
+
+      // Prevents state updates if the screen loses focus during fetching
+      let isActive = true;
+
+      async function fetchProfileData() {
+
+        try {
+          setLoading(true);
+
+          // Get the currently authenticated user's Firebase UID
+          const userId = auth.currentUser?.uid;
+
+          if (!userId) {
+            return;
+          }
+
+          // Retrieve the user's document from Firestore
+          const userDoc = await getDoc(doc(db, 'users', userId));
+
+          // Continue only if the document exists and screen is active
+          if (userDoc.exists() && isActive) {
+
+            const data = userDoc.data();
+
+            // Get current XP, defaulting to zero for new users
+            const currentXp = Number(data.xp) || 0;
+
+            // Calculate level based on every 100 XP earned
+            const calculatedLevel = Math.floor(currentXp / 100) + 1;
+
+            // Determine Draco's evolution stage
+            const levelTitle =
+              calculatedLevel >= 5
+                ? 'Wingling'
+                : calculatedLevel >= 3
+                ? 'Hatchling'
+                : 'Egg';
+
+            // Update the profile information
             setUserData({
               name: data.name || 'New Adventurer',
               level: calculatedLevel,
               levelTitle: levelTitle,
               xp: currentXp,
+
+              // XP required to reach the next level
               nextLevelXp: calculatedLevel * 100,
-              completedQuests: data.completedQuests || 0,
-              points: data.points || currentXp,
-              evolutionTrack: 'Lv 1 Egg → Lv 3 Hatchling → Lv 5 Wingling',
+
+              completedQuests: Number(data.completedQuests) || 0,
+              points: Number(data.points) || currentXp,
+
+              evolutionTrack:
+                'Lv 1 Egg → Lv 3 Hatchling → Lv 5 Wingling'
             });
 
-            // Update topic mastery progress bars if topic data exists in Firestore
+            // ==========================================
+            // UPDATE TOPIC MASTERY PROGRESS
+            // ==========================================
+
             if (data.topicProgress) {
-              setTopicMastery(prev => prev.map(topic => {
-                const match = Object.entries(data.topicProgress).find(([key]) => topic.title.toLowerCase().includes(key.toLowerCase()));
-                return match ? { ...topic, progress: match[1].completed ? 100 : 0 } : topic;
-              }));
+
+              setTopicMastery(prev =>
+                prev.map(topic => {
+
+                  // Find matching topic in Firestore
+                  const match = Object.entries(data.topicProgress)
+                    .find(([key]) =>
+                      topic.title.toLowerCase().includes(
+                        key.toLowerCase()
+                      )
+                    );
+
+                  // Update progress according to completion status
+                  return match
+                    ? {
+                        ...topic,
+                        progress: match[1]?.completed ? 100 : 0
+                      }
+                    : topic;
+                })
+              );
+            }
+
+            // ==========================================
+            // UPDATE TROPHY INFORMATION
+            // ==========================================
+
+            // Load trophies saved in the user's Firestore document
+            if (Array.isArray(data.trophies)) {
+              setTrophies(data.trophies);
+            } else {
+              setTrophies([]);
             }
           }
+
+        } catch (error) {
+
+          // Log Firebase errors for debugging
+          console.log(
+            'Error loading profile from Firebase:',
+            error
+          );
+
+        } finally {
+
+          // Stop the loading indicator if screen is still active
+          if (isActive) {
+            setLoading(false);
+          }
         }
-      } catch (error) {
-        console.log("Error loading profile from Firebase:", error);
-      } finally {
-        setLoading(false); // Stop loading indicator once fetch completes
       }
-    }
-    fetchLiveProfileData();
-  }, []);
 
-  // Compute percentage progress toward the next level milestone
-  const levelPercentage = Math.min(100, Math.round((userData.xp / userData.nextLevelXp) * 100));
+      // Execute the Firebase fetching function
+      fetchProfileData();
 
-  // Handle tap event on Draco mascot to trigger a temporary victory hop animation
+      // Cleanup function runs when the screen loses focus
+      return () => {
+        isActive = false;
+      };
+
+    }, [])
+  );
+
+
+  // ==========================================
+  // CALCULATE LEVEL PROGRESS
+  // ==========================================
+
+  // Calculate percentage of XP earned toward the next level.
+  // XP within the current level is used rather than lifetime XP.
+  const currentLevelXp = userData.xp % 100;
+
+  const levelPercentage = Math.round(
+    (currentLevelXp / 100) * 100
+  );
+
+
+  // ==========================================
+  // DRACO MASCOT INTERACTION
+  // ==========================================
+
+  // Trigger a temporary success animation when Draco is tapped
   const handleDracoTap = () => {
+
     setDracoMood('success');
-    setTimeout(() => setDracoMood('idle'), 1200);
+
+    setTimeout(() => {
+      setDracoMood('idle');
+    }, 1200);
   };
 
-  // Render a loading spinner while profile data loads from Firestore
+
+  // ==========================================
+  // LOADING SCREEN
+  // ==========================================
+
+  // Show spinner while profile information is loading
   if (loading) {
     return (
       <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color="#FF6B35" />
+        <ActivityIndicator
+          size="large"
+          color="#FF6B35"
+        />
       </View>
     );
   }
 
+
+  // ==========================================
+  // MAIN PROFILE SCREEN
+  // ==========================================
+
   return (
     <View style={styles.screenWrapper}>
-      <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-        
+
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.contentContainer}
+      >
+
         {/* ========================================== */}
         {/* TOP HEADER SECTION                         */}
         {/* ========================================== */}
+
         <View style={styles.headerRow}>
-          <TouchableOpacity 
+
+          <TouchableOpacity
             style={styles.headerIconContainer}
-            onPress={() => setActiveTab(activeTab === 'profile' ? 'trophies' : 'profile')}
+            onPress={() =>
+              setActiveTab(
+                activeTab === 'profile' ? 'trophies' : 'profile'
+              )
+            }
           >
-            <FontAwesome5 name="code" size={18} color="#FFF" />
+            <FontAwesome5
+              name="code"
+              size={18}
+              color="#FFF"
+            />
           </TouchableOpacity>
-          
+
           <View style={styles.headerTextContainer}>
+
             <Text style={styles.headerTitle}>
-              {activeTab === 'profile' ? 'Your adventurer' : 'Your trophy shelf'}
+              {activeTab === 'profile'
+                ? 'Your adventurer'
+                : 'Your trophy shelf'}
             </Text>
+
             <Text style={styles.headerSubtitle}>
-              {activeTab === 'profile' ? 'GROW A LITTLE EVERY DAY' : '0 OF 6 ACHIEVEMENTS EARNED'}
+              {activeTab === 'profile'
+                ? 'GROW A LITTLE EVERY DAY'
+                : `${trophies.length} ACHIEVEMENTS EARNED`}
             </Text>
+
           </View>
 
-          <TouchableOpacity style={styles.settingsButton}>
-            <Ionicons name="settings-outline" size={20} color="#1F1F1F" />
+          <TouchableOpacity
+            style={styles.settingsButton}
+            onPress={() => navigation.navigate('Settings')}
+          >
+            <Ionicons
+              name="settings-outline"
+              size={20}
+              color="#1F1F1F"
+            />
           </TouchableOpacity>
+
         </View>
 
+
         {/* ========================================== */}
-        {/* TAB SWITCHER (Adventurer Profile vs Trophy Shelf) */}
+        {/* PROFILE AND TROPHY TAB SWITCHER            */}
         {/* ========================================== */}
+
         <View style={styles.tabToggleRow}>
-          <TouchableOpacity 
-            style={[styles.tabButton, activeTab === 'profile' && styles.activeTabButton]}
+
+          <TouchableOpacity
+            style={[
+              styles.tabButton,
+              activeTab === 'profile' && styles.activeTabButton
+            ]}
             onPress={() => setActiveTab('profile')}
           >
-            <Text style={[styles.tabButtonText, activeTab === 'profile' && styles.activeTabText]}>
+            <Text
+              style={[
+                styles.tabButtonText,
+                activeTab === 'profile' && styles.activeTabText
+              ]}
+            >
               Adventurer Profile
             </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity 
-            style={[styles.tabButton, activeTab === 'trophies' && styles.activeTabButton]}
+
+          <TouchableOpacity
+            style={[
+              styles.tabButton,
+              activeTab === 'trophies' && styles.activeTabButton
+            ]}
             onPress={() => setActiveTab('trophies')}
           >
-            <Text style={[styles.tabButtonText, activeTab === 'trophies' && styles.activeTabText]}>
+            <Text
+              style={[
+                styles.tabButtonText,
+                activeTab === 'trophies' && styles.activeTabText
+              ]}
+            >
               Trophy Shelf
             </Text>
           </TouchableOpacity>
+
         </View>
 
-        {/* Conditional View Rendering based on active tab */}
+
+        {/* ========================================== */}
+        {/* CONDITIONAL PROFILE / TROPHY CONTENT       */}
+        {/* ========================================== */}
+
         {activeTab === 'profile' ? (
+
           <>
-            {/* ========================================== */}
-            {/* ADVENTURER PROFILE CARD                    */}
-            {/* ========================================== */}
+
+            {/* ADVENTURER PROFILE CARD */}
+
             <View style={styles.profileCard}>
+
               <View style={styles.avatarCircle}>
-                <Ionicons name="person" size={48} color="#1F1F1F" />
+                <Ionicons
+                  name="person"
+                  size={48}
+                  color="#1F1F1F"
+                />
               </View>
-              
+
               <View style={styles.profileDetails}>
-                <Text style={styles.userName}>{userData.name}</Text>
+
+                <Text style={styles.userName}>
+                  {userData.name}
+                </Text>
+
                 <Text style={styles.userLevelTag}>
                   Level {userData.level} • {userData.levelTitle}
                 </Text>
+
                 <Text style={styles.userStatsMeta}>
                   {userData.xp} XP • {userData.completedQuests} quests • {userData.points} pts
                 </Text>
+
               </View>
 
-              <Text style={styles.evolutionTrackText}>{userData.evolutionTrack}</Text>
+              <Text style={styles.evolutionTrackText}>
+                {userData.evolutionTrack}
+              </Text>
+
             </View>
 
-            {/* ========================================== */}
-            {/* LEVEL MILESTONE PROGRESS CARD              */}
-            {/* ========================================== */}
+
+            {/* LEVEL MILESTONE PROGRESS CARD */}
+
             <View style={styles.milestoneCard}>
+
               <View style={styles.circularProgressBox}>
-                <Text style={styles.percentageText}>{levelPercentage}%</Text>
+                <Text style={styles.percentageText}>
+                  {levelPercentage}%
+                </Text>
               </View>
 
               <View style={styles.milestoneDetails}>
+
                 <Text style={styles.milestoneTitle}>
                   Next stop: Level {userData.level + 1}
                 </Text>
+
                 <Text style={styles.milestoneSubtext}>
-                  {userData.xp} / {userData.nextLevelXp} XP this level
+                  {currentLevelXp} / 100 XP this level
                 </Text>
+
                 <Text style={styles.milestoneSubtext}>
-                  {userData.nextLevelXp - userData.xp} XP to your next milestone.
+                  {100 - currentLevelXp} XP to your next milestone.
                 </Text>
+
               </View>
+
             </View>
 
-            {/* ========================================== */}
-            {/* TOPIC MASTERY PROGRESS LIST                */}
-            {/* ========================================== */}
+
+            {/* TOPIC MASTERY PROGRESS */}
+
             <View style={styles.masteryCard}>
-              <Text style={styles.cardHeaderTitle}>Topic mastery</Text>
-              
+
+              <Text style={styles.cardHeaderTitle}>
+                Topic mastery
+              </Text>
+
               {topicMastery.map((topic, index) => (
-                <View key={index} style={styles.topicRow}>
-                  <Text style={styles.topicName}>{topic.title}</Text>
-                  
+
+                <View
+                  key={index}
+                  style={styles.topicRow}
+                >
+
+                  <Text style={styles.topicName}>
+                    {topic.title}
+                  </Text>
+
                   <View style={styles.topicProgressTrack}>
-                    <View style={[styles.topicProgressBar, { width: `${topic.progress}%` }]} />
+
+                    <View
+                      style={[
+                        styles.topicProgressBar,
+                        { width: `${topic.progress}%` }
+                      ]}
+                    />
+
                   </View>
-                  
-                  <Text style={styles.topicPercentage}>{topic.progress}%</Text>
+
+                  <Text style={styles.topicPercentage}>
+                    {topic.progress}%
+                  </Text>
+
                 </View>
+
               ))}
+
             </View>
 
-            {/* Interactive Draco Mascot with dynamic speech bubble message */}
-            <DracoMascot 
-              message={userData.xp === 0 ? "Your egg is resting. Complete your first quest to start hatching!" : `You have earned ${userData.xp} XP! Keep going!`} 
-              mood={dracoMood} 
-              onTap={handleDracoTap} 
+
+            {/* INTERACTIVE DRACO MASCOT */}
+
+            <DracoMascot
+              message={
+                userData.xp === 0
+                  ? "Your egg is resting. Complete your first quest to start hatching!"
+                  : `You have earned ${userData.xp} XP! Keep going!`
+              }
+              mood={dracoMood}
+              onTap={handleDracoTap}
             />
+
           </>
+
         ) : (
+
           <>
-            {/* ========================================== */}
-            {/* TROPHY SHELF & ACHIEVEMENTS VIEW           */}
-            {/* ========================================== */}
-            <DracoMascot 
-              message="Small wins count! Complete quests and fix bugs to earn trophy badges." 
-              mood={dracoMood} 
-              onTap={handleDracoTap} 
+
+            {/* TROPHY SHELF MASCOT */}
+
+            <DracoMascot
+              message="Small wins count! Complete quests and fix bugs to earn trophy badges."
+              mood={dracoMood}
+              onTap={handleDracoTap}
             />
-            
+
+
+            {/* ACHIEVEMENTS GRID */}
+
             <View style={styles.achievementsGrid}>
+
               {[
-                { title: 'First steps', desc: 'Finish your first quest', progress: '0/1 quest', icon: 'footsteps-outline' },
-                { title: 'Hello, Python!', desc: 'Complete Hello Python', progress: '0% complete', icon: 'code-slash-outline' },
-                { title: 'Seven-day spark', desc: 'Practice 7 days in a row', progress: '0/7 days', icon: 'flame-outline' },
-                { title: 'Bug hunter', desc: 'Fix 10 coding bugs', progress: '0 / 10 fixes', icon: 'bug-outline' },
-                { title: 'Variable wizard', desc: 'Master Variables', progress: '0% mastered', icon: 'wand-outline' },
-                { title: 'Loop legend', desc: 'Complete Loops', progress: 'Locked', icon: 'sync-outline' },
+                {
+                  title: 'First steps',
+                  desc: 'Finish your first quest',
+                  progress: `${userData.completedQuests > 0 ? 1 : 0}/1 quest`,
+                  icon: 'footsteps-outline',
+                  earned: userData.completedQuests > 0
+                },
+                {
+                  title: 'Hello, Python!',
+                  desc: 'Complete Hello Python',
+                  progress: `${topicMastery[0]?.progress || 0}% complete`,
+                  icon: 'code-slash-outline',
+                  earned: (topicMastery[0]?.progress || 0) === 100
+                },
+                {
+                  title: 'Seven-day spark',
+                  desc: 'Practice 7 days in a row',
+                  progress: '0/7 days',
+                  icon: 'flame-outline',
+                  earned: false
+                },
+                {
+                  title: 'Bug hunter',
+                  desc: 'Fix 10 coding bugs',
+                  progress: '0 / 10 fixes',
+                  icon: 'bug-outline',
+                  earned: false
+                },
+                {
+                  title: 'Variable wizard',
+                  desc: 'Master Variables',
+                  progress: `${topicMastery[1]?.progress || 0}% mastered`,
+                  icon: 'wand-outline',
+                  earned: (topicMastery[1]?.progress || 0) === 100
+                },
+                {
+                  title: 'Loop legend',
+                  desc: 'Complete Loops',
+                  progress: `${topicMastery[3]?.progress || 0}% complete`,
+                  icon: 'sync-outline',
+                  earned: (topicMastery[3]?.progress || 0) === 100
+                }
+
               ].map((badge, index) => (
-                <View key={index} style={styles.badgeCard}>
-                  <View style={styles.lockedBadgeIconBox}>
-                    <Ionicons name={badge.icon} size={22} color="#888" />
+
+                <View
+                  key={index}
+                  style={styles.badgeCard}
+                >
+
+                  <View
+                    style={[
+                      styles.lockedBadgeIconBox,
+                      badge.earned && styles.earnedBadgeIconBox
+                    ]}
+                  >
+
+                    <Ionicons
+                      name={badge.icon}
+                      size={22}
+                      color={badge.earned ? '#FF6B35' : '#888'}
+                    />
+
                   </View>
-                  <Text style={styles.badgeTitle}>{badge.title}</Text>
-                  <Text style={styles.badgeDescription}>{badge.desc}</Text>
-                  <Text style={styles.badgeProgressText}>{badge.progress}</Text>
+
+                  <Text style={styles.badgeTitle}>
+                    {badge.title}
+                  </Text>
+
+                  <Text style={styles.badgeDescription}>
+                    {badge.desc}
+                  </Text>
+
+                  <Text style={styles.badgeProgressText}>
+                    {badge.earned ? 'Earned!' : badge.progress}
+                  </Text>
+
                 </View>
+
               ))}
+
             </View>
 
-            <Text style={styles.gridFooterNote}>Keep learning. Your collection grows with you.</Text>
+            <Text style={styles.gridFooterNote}>
+              Keep learning. Your collection grows with you.
+            </Text>
+
           </>
+
         )}
 
       </ScrollView>
+
     </View>
   );
 }
 
+
 // ==========================================
-// STYLESHEET (Figma Spec Layout & Theme)
+// STYLESHEET
 // ==========================================
+
 const styles = StyleSheet.create({
-  screenWrapper: { flex: 1, backgroundColor: '#FFD166' },
-  container: { flex: 1 },
-  contentContainer: { padding: 16, paddingBottom: 40 },
-  centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FFD166' },
 
-  headerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 14, marginTop: 10 },
-  headerIconContainer: { backgroundColor: '#FF6B35', padding: 8, borderRadius: 12, borderWidth: 2, borderColor: '#1F1F1F', marginRight: 10 },
-  headerTextContainer: { flex: 1 },
-  headerTitle: { fontSize: 22, fontWeight: '900', color: '#1F1F1F', letterSpacing: -0.5 },
-  headerSubtitle: { fontSize: 9, fontWeight: '800', color: '#5C4033', marginTop: 1 },
-  settingsButton: { backgroundColor: '#FFF', padding: 8, borderRadius: 12, borderWidth: 2, borderColor: '#1F1F1F' },
+  screenWrapper: {
+    flex: 1,
+    backgroundColor: '#FFD166'
+  },
 
-  tabToggleRow: { flexDirection: 'row', backgroundColor: '#FFF', borderRadius: 16, borderWidth: 2.5, borderColor: '#1F1F1F', padding: 4, marginBottom: 16 },
-  tabButton: { flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 12 },
-  activeTabButton: { backgroundColor: '#FF6B35' },
-  tabButtonText: { fontSize: 12, fontWeight: '800', color: '#1F1F1F' },
-  activeTabText: { color: '#FFF' },
+  container: {
+    flex: 1
+  },
 
-  profileCard: { backgroundColor: '#FFF', padding: 16, borderRadius: 22, borderWidth: 2.5, borderColor: '#1F1F1F', marginBottom: 14, shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.15, shadowRadius: 3, elevation: 3 },
-  avatarCircle: { width: 70, height: 70, borderRadius: 35, backgroundColor: '#FFD166', justifyContent: 'center', alignItems: 'center', borderWidth: 2.5, borderColor: '#1F1F1F', marginBottom: 10, alignSelf: 'center' },
-  profileDetails: { alignItems: 'center', marginBottom: 10 },
-  userName: { fontSize: 20, fontWeight: '900', color: '#1F1F1F', marginBottom: 2 },
-  userLevelTag: { fontSize: 13, fontWeight: '800', color: '#FF6B35', marginBottom: 4 },
-  userStatsMeta: { fontSize: 11, fontWeight: '700', color: '#666' },
-  evolutionTrackText: { textAlign: 'center', fontSize: 10, fontWeight: '800', color: '#888', borderTopWidth: 1, borderTopColor: '#EEE', paddingTop: 8 },
+  contentContainer: {
+    padding: 16,
+    paddingBottom: 40
+  },
 
-  milestoneCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', padding: 16, borderRadius: 22, borderWidth: 2.5, borderColor: '#1F1F1F', marginBottom: 14, shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.15, shadowRadius: 3, elevation: 3 },
-  circularProgressBox: { width: 64, height: 64, borderRadius: 32, borderWidth: 6, borderColor: '#E9ECEF', justifyContent: 'center', alignItems: 'center', marginRight: 14 },
-  percentageText: { fontSize: 14, fontWeight: '900', color: '#1F1F1F' },
-  milestoneDetails: { flex: 1 },
-  milestoneTitle: { fontSize: 16, fontWeight: '900', color: '#1F1F1F', marginBottom: 2 },
-  milestoneSubtext: { fontSize: 11, fontWeight: '700', color: '#555', lineHeight: 15 },
+  centerContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#FFD166'
+  },
 
-  masteryCard: { backgroundColor: '#FFF', padding: 16, borderRadius: 22, borderWidth: 2.5, borderColor: '#1F1F1F', marginBottom: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.15, shadowRadius: 3, elevation: 3 },
-  cardHeaderTitle: { fontSize: 18, fontWeight: '900', color: '#1F1F1F', marginBottom: 14 },
-  topicRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-  topicName: { width: 90, fontSize: 12, fontWeight: '800', color: '#1F1F1F' },
-  topicProgressTrack: { flex: 1, height: 10, backgroundColor: '#E9ECEF', borderRadius: 5, marginHorizontal: 10, overflow: 'hidden' },
-  topicProgressBar: { height: '100%', backgroundColor: '#FF6B35', borderRadius: 5 },
-  topicPercentage: { width: 35, fontSize: 11, fontWeight: '900', color: '#1F1F1F', textAlign: 'right' },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 14,
+    marginTop: 10
+  },
 
-  achievementsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
-  badgeCard: { width: '48%', backgroundColor: '#FFF', padding: 14, borderRadius: 20, borderWidth: 2.5, borderColor: '#1F1F1F', marginBottom: 14, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.12, shadowRadius: 3, elevation: 3 },
-  lockedBadgeIconBox: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#E9ECEF', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#1F1F1F', marginBottom: 8 },
-  badgeTitle: { fontSize: 14, fontWeight: '900', color: '#1F1F1F', marginBottom: 2, textAlign: 'center' },
-  badgeDescription: { fontSize: 10, fontWeight: '700', color: '#666', textAlign: 'center', marginBottom: 6, lineHeight: 13 },
-  badgeProgressText: { fontSize: 9, fontWeight: '800', color: '#FF6B35', textAlign: 'center' },
-  gridFooterNote: { textAlign: 'center', fontSize: 10, fontWeight: '800', color: '#5C4033', marginTop: 10, marginBottom: 20 }
+  headerIconContainer: {
+    backgroundColor: '#FF6B35',
+    padding: 8,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#1F1F1F',
+    marginRight: 10
+  },
+
+  headerTextContainer: {
+    flex: 1
+  },
+
+  headerTitle: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: '#1F1F1F',
+    letterSpacing: -0.5
+  },
+
+  headerSubtitle: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#5C4033',
+    marginTop: 1
+  },
+
+  settingsButton: {
+    backgroundColor: '#FFF',
+    padding: 8,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#1F1F1F'
+  },
+
+  tabToggleRow: {
+    flexDirection: 'row',
+    backgroundColor: '#FFF',
+    borderRadius: 16,
+    borderWidth: 2.5,
+    borderColor: '#1F1F1F',
+    padding: 4,
+    marginBottom: 16
+  },
+
+  tabButton: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
+    borderRadius: 12
+  },
+
+  activeTabButton: {
+    backgroundColor: '#FF6B35'
+  },
+
+  tabButtonText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#1F1F1F'
+  },
+
+  activeTabText: {
+    color: '#FFF'
+  },
+
+  profileCard: {
+    backgroundColor: '#FFF',
+    padding: 16,
+    borderRadius: 22,
+    borderWidth: 2.5,
+    borderColor: '#1F1F1F',
+    marginBottom: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
+    elevation: 3
+  },
+
+  avatarCircle: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: '#FFD166',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2.5,
+    borderColor: '#1F1F1F',
+    marginBottom: 10,
+    alignSelf: 'center'
+  },
+
+  profileDetails: {
+    alignItems: 'center',
+    marginBottom: 10
+  },
+
+  userName: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#1F1F1F',
+    marginBottom: 2
+  },
+
+  userLevelTag: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#FF6B35',
+    marginBottom: 4
+  },
+
+  userStatsMeta: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#666'
+  },
+
+  evolutionTrackText: {
+    textAlign: 'center',
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#888',
+    borderTopWidth: 1,
+    borderTopColor: '#EEE',
+    paddingTop: 8
+  },
+
+  milestoneCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF',
+    padding: 16,
+    borderRadius: 22,
+    borderWidth: 2.5,
+    borderColor: '#1F1F1F',
+    marginBottom: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
+    elevation: 3
+  },
+
+  circularProgressBox: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    borderWidth: 6,
+    borderColor: '#E9ECEF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 14
+  },
+
+  percentageText: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#1F1F1F'
+  },
+
+  milestoneDetails: {
+    flex: 1
+  },
+
+  milestoneTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#1F1F1F',
+    marginBottom: 2
+  },
+
+  milestoneSubtext: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#555',
+    lineHeight: 15
+  },
+
+  masteryCard: {
+    backgroundColor: '#FFF',
+    padding: 16,
+    borderRadius: 22,
+    borderWidth: 2.5,
+    borderColor: '#1F1F1F',
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
+    elevation: 3
+  },
+
+  cardHeaderTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#1F1F1F',
+    marginBottom: 14
+  },
+
+  topicRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12
+  },
+
+  topicName: {
+    width: 90,
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#1F1F1F'
+  },
+
+  topicProgressTrack: {
+    flex: 1,
+    height: 10,
+    backgroundColor: '#E9ECEF',
+    borderRadius: 5,
+    marginHorizontal: 10,
+    overflow: 'hidden'
+  },
+
+  topicProgressBar: {
+    height: '100%',
+    backgroundColor: '#FF6B35',
+    borderRadius: 5
+  },
+
+  topicPercentage: {
+    width: 35,
+    fontSize: 11,
+    fontWeight: '900',
+    color: '#1F1F1F',
+    textAlign: 'right'
+  },
+
+  achievementsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between'
+  },
+
+  badgeCard: {
+    width: '48%',
+    backgroundColor: '#FFF',
+    padding: 14,
+    borderRadius: 20,
+    borderWidth: 2.5,
+    borderColor: '#1F1F1F',
+    marginBottom: 14,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.12,
+    shadowRadius: 3,
+    elevation: 3
+  },
+
+  lockedBadgeIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#E9ECEF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#1F1F1F',
+    marginBottom: 8
+  },
+
+  earnedBadgeIconBox: {
+    backgroundColor: '#FFD166'
+  },
+
+  badgeTitle: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#1F1F1F',
+    marginBottom: 2,
+    textAlign: 'center'
+  },
+
+  badgeDescription: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: 6,
+    lineHeight: 13
+  },
+
+  badgeProgressText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#FF6B35',
+    textAlign: 'center'
+  },
+
+  gridFooterNote: {
+    textAlign: 'center',
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#5C4033',
+    marginTop: 10,
+    marginBottom: 20
+  }
+
 });
