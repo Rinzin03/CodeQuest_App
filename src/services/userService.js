@@ -1,11 +1,27 @@
 // ============================================================================
-// USER SERVICE - STATS, WEEKLY XP GRAPH, TROPHIES & TOPIC MASTERY SYNC
-// Handles atomic Firestore updates for user progress across quests, XP, 
-// weekly graph breakdown, and topic mastery.
+// CODEQUEST USER SERVICE - TOPIC MASTERY & SEQUENTIAL UNLOCKING SYNC
+// Handles atomic Firestore updates for XP, Quest counts, stars, topic mastery,
+// and automatic sequential topic unlocking.
 // ============================================================================
 
 import { db, auth } from './firebase';
 import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+
+/**
+ * Normalizes topic identifiers to standard Firestore keys (e.g., 'topic_1', 'topic_2')
+ */
+function normalizeTopicId(topicInput) {
+  if (!topicInput) return 'topic_1';
+  const str = String(topicInput).toLowerCase().trim();
+  
+  if (str.includes('1') || str.includes('hello')) return 'topic_1';
+  if (str.includes('2') || str.includes('variable')) return 'topic_2';
+  if (str.includes('3') || str.includes('conditional')) return 'topic_3';
+  if (str.includes('4') || str.includes('loop')) return 'topic_4';
+  if (str.includes('5') || str.includes('function')) return 'topic_5';
+  
+  return topicInput; // Fallback to raw string if already formatted
+}
 
 /**
  * Checks elapsed time since the user last lost a heart and restores hearts 
@@ -24,14 +40,10 @@ export async function checkAndRestoreHearts() {
   const currentHearts = userData.hearts ?? 5;
   const maxHearts = 5;
 
-  if (currentHearts >= maxHearts) {
-    return maxHearts;
-  }
+  if (currentHearts >= maxHearts) return maxHearts;
 
   const lastHeartLossTime = userData.lastHeartLossTime;
-  if (!lastHeartLossTime) {
-    return currentHearts;
-  }
+  if (!lastHeartLossTime) return currentHearts;
 
   const now = Date.now();
   const elapsedMs = now - lastHeartLossTime;
@@ -56,34 +68,28 @@ export async function checkAndRestoreHearts() {
 }
 
 /**
- * Updates general user stats, weekly XP graph, topic mastery, and trophies atomically.
- * @param {Object} stats - Object containing raw numbers for xp, points, completedQuests, etc.
- * @param {string} topicId - The topic identifier being practiced/completed (e.g., 'topic_1').
- * @param {number} earnedXp - The specific XP earned during this session (defaults to 20).
+ * Updates user statistics in Firestore upon quest completion.
+ * Tracks mode completions (Quiz, Output Prediction, Bug-Fix) and unlocks the 
+ * next sequential topic once all 3 modes for a topic are cleared.
  */
-export async function updateUserStats(stats, topicId = null, earnedXp = 20) {
+export async function updateUserStats(stats, rawTopicId = null, challengeMode = null, earnedXp = 20, sessionStars = 3) {
   const userId = auth.currentUser?.uid;
   if (!userId) return;
 
+  const topicId = normalizeTopicId(rawTopicId);
   const userRef = doc(db, 'users', userId);
   const userSnap = await getDoc(userRef);
 
-  // Fetch current user data to compute accurate numerical increments
   const currentData = userSnap.exists() ? userSnap.data() : {};
-  
-  // Extract clean numerical values to avoid FieldValue increment calculation bugs
   const existingQuests = currentData.completedQuests || 0;
-  const addedQuests = stats.completedQuests?.numberValue || 1;
-  const newTotalQuests = existingQuests + addedQuests;
+  const newTotalQuests = existingQuests + 1;
 
   let updatePayload = { 
     ...stats,
-    completedQuests: newTotalQuests // Store absolute numerical total
+    completedQuests: newTotalQuests
   };
 
-  // ==========================================================================
   // 1. HEART LOSS TIMESTAMP MANAGEMENT
-  // ==========================================================================
   if (stats.hearts !== undefined) {
     const oldHearts = currentData.hearts ?? 5;
     if (stats.hearts < oldHearts) {
@@ -93,45 +99,68 @@ export async function updateUserStats(stats, topicId = null, earnedXp = 20) {
     }
   }
 
-  // ==========================================================================
   // 2. WEEKLY XP GRAPH BREAKDOWN (Monday to Sunday)
-  // ==========================================================================
   let weeklyXp = [...(currentData.weeklyXp || [0, 0, 0, 0, 0, 0, 0])];
-  const jsDay = new Date().getDay(); // 0 (Sun) to 6 (Sat)
-  const graphIndex = (jsDay + 6) % 7; // Maps to Monday=0 ... Sunday=6
+  const jsDay = new Date().getDay();
+  const graphIndex = (jsDay + 6) % 7; 
   weeklyXp[graphIndex] = (weeklyXp[graphIndex] || 0) + earnedXp;
   updatePayload.weeklyXp = weeklyXp;
 
-  // ==========================================================================
-  // 3. TOPIC MASTERY & PROGRESS TRACKING
-  // ==========================================================================
-  if (topicId) {
+  // 3. TOPIC PROGRESS, STARS & MASTERY LOGIC
+  if (topicId && challengeMode) {
     const existingProgress = currentData.topicProgress || {};
-    const currentTopicData = existingProgress[topicId] || { completedQuests: 0, masteryLevel: 'In Progress' };
+    const topicData = existingProgress[topicId] || { completedModes: [], stars: 0, masteryLevel: 'In Progress' };
     
-    const newCompletedQuests = currentTopicData.completedQuests + 1;
-    // 3 completed sessions fully masters a topic (100%)
-    const masteryPercentage = Math.min(100, Math.round((newCompletedQuests / 3) * 100));
+    let completedModes = [...(topicData.completedModes || [])];
+    const normalizedMode = challengeMode.toLowerCase().trim();
 
-    updatePayload[`topicProgress.${topicId}`] = {
-      completedQuests: newCompletedQuests,
-      masteryLevel: masteryPercentage >= 100 ? 'Mastered' : 'In Progress',
+    // Add completed mode to list if not present
+    if (!completedModes.includes(normalizedMode)) {
+      completedModes.push(normalizedMode);
+    }
+
+    // Check if all 3 challenge modes (Quiz, Output Prediction, Bug-Fix) are completed
+    const requiredModes = ['quiz', 'output prediction', 'bug-fix'];
+    const isTopicFinished = requiredModes.every(mode => completedModes.includes(mode));
+
+    // Calculate highest star rating (1 to 3 stars)
+    const highestStars = Math.max(topicData.stars || 0, sessionStars);
+    
+    // Calculate completion percentage: 1 mode = 33%, 2 modes = 66%, 3 modes = 100%
+    const masteryPercentage = Math.min(100, Math.round((completedModes.length / 3) * 100));
+
+    // Prepare updated nested progress map for this topic
+    const updatedTopicObject = {
+      unlocked: true,
+      completedModes: completedModes,
+      stars: highestStars,
+      masteryLevel: isTopicFinished ? 'Mastered' : 'In Progress',
       percentage: masteryPercentage
     };
+
+    updatePayload[`topicProgress.${topicId}`] = updatedTopicObject;
+
+    // 4. UNLOCK NEXT TOPIC IN SEQUENCE IF CURRENT TOPIC IS FULLY MASTERED
+    if (isTopicFinished) {
+      const topicSequence = ['topic_1', 'topic_2', 'topic_3', 'topic_4', 'topic_5'];
+      const currentIndex = topicSequence.indexOf(topicId);
+      
+      if (currentIndex !== -1 && currentIndex + 1 < topicSequence.length) {
+        const nextTopicId = topicSequence[currentIndex + 1];
+        // Mark next topic as unlocked in Firestore
+        updatePayload[`topicProgress.${nextTopicId}.unlocked`] = true;
+      }
+    }
   }
 
-  // ==========================================================================
-  // 4. AUTOMATIC TROPHY / BADGE UNLOCKING
-  // ==========================================================================
+  // 5. AUTOMATIC TROPHY / BADGE UNLOCKING
   let trophies = [...(currentData.trophies || [])];
   if (newTotalQuests >= 1 && !trophies.includes('First steps')) {
     trophies.push('First steps');
   }
   updatePayload.trophies = trophies;
 
-  // ==========================================================================
-  // 5. FIRESTORE COMMIT
-  // ==========================================================================
+  // 6. FIRESTORE COMMIT
   if (!userSnap.exists()) {
     await setDoc(userRef, {
       name: 'Adventurer',
@@ -141,7 +170,9 @@ export async function updateUserStats(stats, topicId = null, earnedXp = 20) {
       hearts: 5,
       streak: 1,
       trophies: trophies,
-      topicProgress: {},
+      topicProgress: { 
+        topic_1: { unlocked: true, completedModes: [], stars: 0, percentage: 0 } 
+      },
       weeklyXp: weeklyXp,
       lastHeartLossTime: null,
       ...updatePayload

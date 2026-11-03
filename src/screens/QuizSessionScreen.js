@@ -32,7 +32,7 @@ export default function QuizSessionScreen({ route, navigation }) {
   // COMPONENT STATE MANAGEMENT
   // ==========================================================================
   const [questions, setQuestions] = useState([]);               // Filtered and randomized questions for the session
-  const [currentIndex, setCurrentIndex] = useState(0);           // Current question position tracker (0-4)
+  const [currentIndex, setCurrentIndex] = useState(0);           // Current question position tracker (0 to 4)
   const [shuffledOptions, setShuffledOptions] = useState([]);   // Randomized multiple-choice options for current question
   const [selectedOption, setSelectedOption] = useState(null);   // Option chosen by the user
   const [isAnswerChecked, setIsAnswerChecked] = useState(false); // Flag tracking if the answer has been submitted
@@ -64,6 +64,7 @@ export default function QuizSessionScreen({ route, navigation }) {
   // ==========================================================================
   // DATA FETCHING & STRICT MODE FILTERING
   // Queries Firestore sub-collection and filters strictly by challengeMode.
+  // Ensures exactly up to 5 questions are pulled per challenge mode.
   // ==========================================================================
   useEffect(() => {
     async function loadQuizData() {
@@ -93,7 +94,7 @@ export default function QuizSessionScreen({ route, navigation }) {
           filtered = allQuestions;
         }
 
-        // 4. Randomize and slice up to 5 unique questions to avoid repetition
+        // 4. Randomize and slice exactly 5 unique questions (or max available) for this level session
         const randomized = shuffleArray(filtered).slice(0, Math.min(5, filtered.length));
         setQuestions(randomized);
 
@@ -166,18 +167,18 @@ export default function QuizSessionScreen({ route, navigation }) {
       setShuffledOptions(shuffleArray(nextQ.options));
       setCurrentIndex(prev => prev + 1);
     } else {
-      // End of session: trigger summary view and sync cumulative rewards to Firestore
+      // End of session (all 5 questions completed): trigger summary view and sync cumulative rewards
       setIsFinished(true);
       const xpEarned = isDaily ? 40 : 20; // Daily challenges yield double XP
       
       const userId = auth.currentUser?.uid;
       if (userId) {
-        // Atomically increment XP, points, completed quests, and update topic mastery / trophy shelf
+        // Atomically increment XP, points, completed quests, weekly graph, and topic mastery
         await updateUserStats({
           xp: increment(xpEarned),
           points: increment(earnedPoints),
           completedQuests: increment(1),
-        }, topicId);
+        }, topicId, challengeMode, xpEarned, starsEarned);
       }
     }
   };
@@ -207,7 +208,6 @@ export default function QuizSessionScreen({ route, navigation }) {
           <Text style={styles.summaryScoreText}>Score: {score} / {questions.length}</Text>
           
           {/* Dynamic 3-Star Rating Display */}
-          <div /> {/* Semantic spacer wrapper */}
           <View style={styles.starsRow}>
             {Array.from({ length: 3 }).map((_, i) => (
               <Ionicons 
@@ -240,7 +240,7 @@ export default function QuizSessionScreen({ route, navigation }) {
   const progressPercentage = ((currentIndex + 1) / questions.length) * 100;
 
   // ==========================================================================
-  // RENDER: ACTIVE QUESTION INTERFACE
+  // RENDER: ACTIVE QUESTION INTERFACE (5 Questions per Challenge Session)
   // ==========================================================================
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
