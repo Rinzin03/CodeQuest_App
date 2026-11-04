@@ -1,4 +1,3 @@
-
 // ============================================================================
 // CODEQUEST HOME DASHBOARD
 // LIVE TICKING & PERSISTENT HEART TIMER
@@ -193,8 +192,15 @@ export default function HomeScreen({ navigation }) {
             setTimeLeft(initialSecondsLeft);
 
             // ------------------------------------------------------
-            // STEP 5: UPDATE USER DASHBOARD STATISTICS
+            // STEP 5: UPDATE USER DASHBOARD STATISTICS & GRAPH
             // ------------------------------------------------------
+
+            // Safely parse weeklyXpGraph or fallback to an array of 7 zeroes
+            const graphData = Array.isArray(data.weeklyXpGraph) && data.weeklyXpGraph.length === 7
+              ? data.weeklyXpGraph.map(val => Number(val) || 0)
+              : Array.isArray(data.weeklyXp) && data.weeklyXp.length === 7
+              ? data.weeklyXp.map(val => Number(val) || 0)
+              : [0, 0, 0, 0, 0, 0, 0];
 
             setUserData({
 
@@ -219,12 +225,8 @@ export default function HomeScreen({ navigation }) {
                 Math.min(5, Number(currentRestoredHearts) || 0)
               ),
 
-              // Ensure weekly XP always contains seven numeric values
-              weeklyXp: Array.isArray(data.weeklyXp)
-                ? Array.from({ length: 7 }, (_, index) =>
-                    Number(data.weeklyXp[index]) || 0
-                  )
-                : [0, 0, 0, 0, 0, 0, 0],
+              // Assign parsed zero-safe weekly graph data
+              weeklyXp: graphData,
 
               lastHeartLossTime: lossTime
             });

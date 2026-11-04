@@ -1,7 +1,7 @@
 // ============================================================================
-// CODEQUEST SETTINGS SCREEN
-// Manages app audio state, clears user progress in Firestore, and handles 
-// Firebase authentication sign-out with a custom yellow/orange color scheme.
+// CODEQUEST SETTINGS SCREEN 
+// Manages app audio state, clears all user metrics (XP, points, quests, topic 
+// mastery, weekly graph data, and trophy shelf) in Firestore, and handles logout.
 // ============================================================================
 
 import React, { useState } from 'react';
@@ -31,12 +31,15 @@ export default function SettingsScreen({ navigation }) {
   };
 
   /**
-   * Resets all user progression metrics (XP, points, quests, topic mastery) in Firestore.
+   * ==========================================================================
+   * COMPREHENSIVE FIRESTORE RESET FUNCTION
+   * Wipes all user progress metrics, weekly graphs, topic mastery, and trophies.
+   * ==========================================================================
    */
   const handleResetProgress = () => {
     Alert.alert(
       "Reset Quest Progress?",
-      "Are you sure you want to reset all your stars, XP, points, and topic mastery? This action cannot be undone.",
+      "Are you sure you want to reset all your stars, XP, points, topic mastery, weekly graph, and trophy shelf? This action cannot be undone.",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -50,19 +53,26 @@ export default function SettingsScreen({ navigation }) {
                 return;
               }
 
-              // Reference to current user's document in Firestore and reset values
+              // Reference to current user's document in Firestore
               const userRef = doc(db, 'users', userId);
+              
+              // ==============================================================
+              // COMPREHENSIVE RESET PAYLOAD
+              // Wipes out all progress arrays and tracking fields simultaneously
+              // ==============================================================
               await updateDoc(userRef, {
                 xp: 0,
                 points: 0,
                 completedQuests: 0,
                 hearts: 5,
-                topicProgress: {} // Clears level percentages
+                topicProgress: {},                 // Clears Topic Mastery percentages
+                trophies: [],                      // Clears earned Trophy Shelf badges
+                weeklyXpGraph: [0, 0, 0, 0, 0, 0, 0] // Explicitly zeroes out 7-day XP graph data
               });
 
-              Alert.alert("Success", "Your progression has been successfully reset.");
+              Alert.alert("Success", "All progress, mastery, weekly graphs, and trophies have been reset.");
             } catch (error) {
-              console.error("Error resetting user progress in Firestore:", error);
+              console.error("Error resetting complete user profile in Firestore:", error);
               Alert.alert("Error", "Could not reset progress. Please try again.");
             }
           }
@@ -147,7 +157,7 @@ export default function SettingsScreen({ navigation }) {
           </View>
           <View style={styles.settingTextGroup}>
             <Text style={styles.actionLabelOrange}>Reset Quest Progress</Text>
-            <Text style={styles.settingSubtext}>Clear XP, points, stars, and level topic mastery</Text>
+            <Text style={styles.settingSubtext}>Clear XP, points, mastery, weekly graph, and trophies</Text>
           </View>
         </TouchableOpacity>
 
@@ -171,7 +181,6 @@ export default function SettingsScreen({ navigation }) {
 // STYLESHEET (Yellow, Orange & White Theme)
 // ============================================================================
 const styles = StyleSheet.create({
-  // Base Screen Background: Yellow (#FFD166)
   screenWrapper: { 
     flex: 1, 
     backgroundColor: '#FFD166' 
@@ -183,7 +192,6 @@ const styles = StyleSheet.create({
     paddingTop: 50, 
     paddingBottom: 16 
   },
-  // Back Button Card: White (#FFFFFF)
   backButton: { 
     backgroundColor: '#FFFFFF', 
     padding: 8, 
@@ -209,7 +217,6 @@ const styles = StyleSheet.create({
     marginBottom: 8, 
     letterSpacing: 0.5 
   },
-  // Setting Card Container: White (#FFFFFF)
   settingCard: { 
     backgroundColor: '#FFFFFF', 
     borderRadius: 18, 
@@ -238,7 +245,6 @@ const styles = StyleSheet.create({
     fontWeight: '700', 
     color: '#666666' 
   },
-  // Action Button Cards: White (#FFFFFF)
   actionCard: { 
     flexDirection: 'row', 
     alignItems: 'center', 
@@ -249,7 +255,6 @@ const styles = StyleSheet.create({
     padding: 16, 
     marginBottom: 12 
   },
-  // Icon Container Pill: Bright Orange (#FF6B35)
   orangeIconBox: { 
     backgroundColor: '#FF6B35', 
     padding: 8, 
@@ -258,7 +263,6 @@ const styles = StyleSheet.create({
     borderColor: '#1F1F1F', 
     marginRight: 12 
   },
-  // Logout Icon Pill: Darker Orange/Red (#E63946)
   redIconBox: { 
     backgroundColor: '#E63946', 
     padding: 8, 

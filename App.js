@@ -9,7 +9,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from './src/services/firebase';
 
-
 // ==========================================
 // IMPORTING DATABASE SEEDING SCRIPT
 // ==========================================
@@ -29,12 +28,6 @@ import SettingsScreen from './src/screens/SettingsScreen';
 // Initialize our Stack and Bottom Tab navigators
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
-
-<Stack.Screen 
-  name="Settings" 
-  component={SettingsScreen} 
-  options={{ headerShown: false }} 
-/>
 
 // ==========================================
 // MAIN TABS NAVIGATION (Bottom Bar)
@@ -106,15 +99,40 @@ export default function App() {
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ headerStyle: { backgroundColor: '#FFD166' } }}>
         {user ? (
-          // IF USER IS LOGGED IN: Show main application screens & challenges
+          // IF USER IS LOGGED IN: Show main application screens, challenges & settings
           <>
-            <Stack.Screen name="MainTabs" component={MainTabs} options={{ headerShown: false }} />
-            <Stack.Screen name="ChooseChallenge" component={ChooseChallengeScreen} options={{ title: 'Select Mode' }} />
-            <Stack.Screen name="QuizSession" component={QuizSessionScreen} options={{ title: 'Quest Challenge' }} />
+            <Stack.Screen 
+              name="MainTabs" 
+              component={MainTabs} 
+              options={{ headerShown: false }} 
+            />
+            <Stack.Screen 
+              name="ChooseChallenge" 
+              component={ChooseChallengeScreen} 
+              options={{ title: 'Select Mode' }} 
+            />
+            <Stack.Screen 
+              name="QuizSession" 
+              component={QuizSessionScreen} 
+              options={{ title: 'Quest Challenge' }} 
+            />
+            {/* ============================================================== */}
+            {/* SETTINGS SCREEN REGISTERED AT ROOT STACK LEVEL                */}
+            {/* Allows direct navigation from ProfileScreen header gear icon    */}
+            {/* ============================================================== */}
+            <Stack.Screen 
+              name="Settings" 
+              component={SettingsScreen} 
+              options={{ headerShown: false }} 
+            />
           </>
         ) : (
           // IF USER IS NOT LOGGED IN: Show authentication screen (Login / Sign Up)
-          <Stack.Screen name="Auth" component={AuthScreen} options={{ headerShown: false }} />
+          <Stack.Screen 
+            name="Auth" 
+            component={AuthScreen} 
+            options={{ headerShown: false }} 
+          />
         )}
       </Stack.Navigator>
     </NavigationContainer>
