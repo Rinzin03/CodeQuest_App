@@ -128,24 +128,26 @@ export default function ProfileScreen({ navigation }) {
             // ==========================================
             // UPDATE TOPIC MASTERY PROGRESS FROM FIRESTORE
             // ==========================================
-            if (data.topicProgress) {
-              setTopicMastery(prev =>
-                prev.map(topic => {
-                  const match = data.topicProgress[topic.id];
-                  if (match) {
-                    // Pull pre-calculated percentage from Firestore topic object or compute it
-                    const percentage = match.percentage !== undefined 
-                      ? match.percentage 
-                      : Math.round(((match.completedModes?.length || 0) / 3) * 100);
-                    return {
-                      ...topic,
-                      progress: percentage
-                    };
-                  }
-                  return topic;
-                })
-              );
-            }
+            setTopicMastery(prev =>
+              prev.map(topic => {
+                const match = data.topicProgress ? data.topicProgress[topic.id] : null;
+                if (match) {
+                  // Pull pre-calculated percentage from Firestore topic object or compute it
+                  const percentage = match.percentage !== undefined 
+                    ? match.percentage 
+                    : Math.round(((match.completedModes?.length || 0) / 3) * 100);
+                  return {
+                    ...topic,
+                    progress: percentage
+                  };
+                }
+                // If no entry exists in Firestore (such as after a reset), explicitly reset progress to 0
+                return {
+                  ...topic,
+                  progress: 0
+                };
+              })
+            );
 
             // ==========================================
             // UPDATE TROPHY INFORMATION

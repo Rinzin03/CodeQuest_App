@@ -19,15 +19,16 @@ import { db, auth } from '../services/firebase';
 import { collection, getDocs, doc, getDoc, query, where, increment } from 'firebase/firestore';
 import { updateUserStats } from '../services/userService';
 import DracoMascot from '../components/DracoMascot';
+import { playSound } from '../services/audioService';
 
 /**
  * ============================================================================
- * STEP 2 FIX: MODE-SPECIFIC FIRESTORE QUERY FUNCTION
+ * MODE-SPECIFIC FIRESTORE QUERY FUNCTION
  * Fetches only the questions matching the selected challenge mode from Firestore.
  * Prevents Quiz, Prediction, and Bug-Fix modes from sharing the same questions.
  * 
- * @param {string} topicId - e.g., 'topic_1' or 'topic_2'
- * @param {string} challengeMode - e.g., 'Quiz', 'Output Prediction', or 'Bug-Fix'
+ * @param {string} topicId e.g., 'topic_1' or 'topic_2'
+ * @param {string} challengeMode e.g., 'Quiz', 'Output Prediction', or 'Bug-Fix'
  * ============================================================================
  */
 export async function fetchQuestionsForMode(topicId, challengeMode) {
@@ -75,14 +76,14 @@ export default function QuizSessionScreen({ route, navigation }) {
   const [currentIndex, setCurrentIndex] = useState(0);          // Current question position tracker (0 to 4)
   const [shuffledOptions, setShuffledOptions] = useState([]);   // Randomized multiple-choice options for current question
   const [selectedOption, setSelectedOption] = useState(null);   // Option chosen by the user
-  const [isAnswerChecked, setIsAnswerChecked] = useState(false); // Flag tracking if the answer has been submitted
-  const [isCorrectAnswer, setIsCorrectAnswer] = useState(false); // Tracks if the user's answer was correct
+  const [isAnswerChecked, setIsAnswerChecked] = useState(false);// Flag tracking if the answer has been submitted
+  const [isCorrectAnswer, setIsCorrectAnswer] = useState(false);// Tracks if the user's answer was correct
   
   const [hearts, setHearts] = useState(5);                      // Active heart count synced with Firestore
   const [score, setScore] = useState(0);                        // Total correct answers in this session
   const [earnedPoints, setEarnedPoints] = useState(0);          // Cumulative difficulty-weighted points
-  const [loading, setLoading] = useState(true);                  // Loading spinner indicator while fetching Firestore data
-  const [isFinished, setIsFinished] = useState(false);          // Flag indicating completion of all questions
+  const [loading, setLoading] = useState(true);                 // Loading spinner indicator while fetching Firestore data
+  const [isFinished, setIsFinished] = useState(false);           // Flag indicating completion of all questions
 
   // Draco mascot emotional state and speech bubble text
   const [dracoMood, setDracoMood] = useState('idle');
@@ -143,7 +144,7 @@ export default function QuizSessionScreen({ route, navigation }) {
   }, [topicId, challengeMode]);
 
   // ==========================================================================
-  // ANSWER VERIFICATION & HEART DEDUCTION LOGIC
+  // ANSWER VERIFICATION & AUDIO TRIGGERS
   // ==========================================================================
   const handleCheckAnswer = async () => {
     if (!selectedOption) {
@@ -159,23 +160,30 @@ export default function QuizSessionScreen({ route, navigation }) {
     const userId = auth.currentUser?.uid;
 
     if (correct) {
-      // Correct answer: trigger happy Draco mood and increase score/points
+      // Play reward sound for correct quiz answers
+      playSound('correct');
+
       setDracoMood('success');
       setDracoMessage(currentQ.explanation);
       setScore(prev => prev + 1);
 
-      // Award points based on question difficulty: easy = 10, medium = 20, hard = 30
       const diffPoints = currentQ.difficulty === 'hard' ? 30 : currentQ.difficulty === 'medium' ? 20 : 10;
       setEarnedPoints(prev => prev + diffPoints);
     } else {
-      // Incorrect answer: trigger sad Draco mood and deduct 1 live heart
       setDracoMood('sad');
       setDracoMessage(`Incorrect. Correct answer: ${currentQ.correctAnswer}. ${currentQ.explanation}`);
       
       const newHearts = Math.max(0, hearts - 1);
       setHearts(newHearts);
       
-      // Update heart count immediately in Firestore database
+      if (newHearts <= 0) {
+        // Play losing sound when all hearts are depleted
+        playSound('losing');
+      } else {
+        // Play standard wrong answer sound for mistakes
+        playSound('wrong');
+      }
+      
       if (userId) {
         await updateUserStats({ hearts: newHearts });
       }
@@ -183,31 +191,31 @@ export default function QuizSessionScreen({ route, navigation }) {
   };
 
   // ==========================================================================
-  // PROGRESSION HANDLER: NEXT QUESTION OR QUEST SUMMARY
+  // PROGRESSION HANDLER: NEXT QUESTION OR QUEST SUMMARY (COMPLETED)
   // ==========================================================================
   const handleNextQuestion = async () => {
-    // Reset question-level interactive states
     setIsAnswerChecked(false);
     setSelectedOption(null);
     setDracoMood('idle');
     setDracoMessage("Keep going!");
 
     if (currentIndex + 1 < questions.length) {
-      // Load next question in array and shuffle its answer choices
       const nextQ = questions[currentIndex + 1];
       setShuffledOptions(shuffleArray(nextQ.options));
       setCurrentIndex(prev => prev + 1);
     } else {
-      // End of session (all 5 questions completed): trigger summary view and sync cumulative rewards
+      // End of session / Level completed!
       setIsFinished(true);
-      const xpEarned = isDaily ? 40 : 20; // Daily challenges yield double XP
       
+      // Play completed audio for finishing the topic/level
+      playSound('completed');
+
+      const xpEarned = isDaily ? 40 : 20; 
       const userId = auth.currentUser?.uid;
+      
       if (userId) {
-        // Calculate star rating based on correct answers
         const starsEarned = score >= 4 ? 3 : score >= 2 ? 2 : 1;
 
-        // Atomically increment XP, points, completed quests, weekly graph, and topic mastery
         await updateUserStats({
           xp: increment(xpEarned),
           points: increment(earnedPoints),
@@ -216,7 +224,6 @@ export default function QuizSessionScreen({ route, navigation }) {
       }
     }
   };
-
   // ==========================================================================
   // RENDER: LOADING STATE
   // ==========================================================================
@@ -274,7 +281,7 @@ export default function QuizSessionScreen({ route, navigation }) {
   const progressPercentage = ((currentIndex + 1) / questions.length) * 100;
 
   // ==========================================================================
-  // RENDER: ACTIVE QUESTION INTERFACE (5 Questions per Challenge Session)
+  // RENDER: ACTIVE QUESTION INTERFACE
   // ==========================================================================
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
@@ -312,14 +319,14 @@ export default function QuizSessionScreen({ route, navigation }) {
       <View style={styles.questionCard}>
         <Text style={styles.cardMainTitle}>{currentQ.title}</Text>
         
-        {/* Renders code snippet block if available (used for Output Prediction & Bug-Fix) */}
+        {/* Renders code snippet block if available */}
         {currentQ.codeSnippet && (
           <View style={styles.terminalBox}>
             <Text style={styles.terminalCode}>{currentQ.codeSnippet}</Text>
           </View>
         )}
 
-        {/* Renders red terminal error text if available (used specifically for Bug-Fix mode) */}
+        {/* Renders red terminal error text if available */}
         {currentQ.errorText && (
           <Text style={styles.errorText}>
             {currentQ.errorText}
@@ -338,7 +345,12 @@ export default function QuizSessionScreen({ route, navigation }) {
           <TouchableOpacity
             key={index}
             style={[styles.optionCard, isSelected && styles.selectedOptionCard]}
-            onPress={() => !isAnswerChecked && setSelectedOption(option)}
+            onPress={() => {
+              if (!isAnswerChecked) {
+                playSound('click'); // Play sound on option tap
+                setSelectedOption(option);
+              }
+            }}
           >
             <Text style={styles.optionLetter}>{letter}</Text>
             <Text style={styles.optionText}>{option}</Text>

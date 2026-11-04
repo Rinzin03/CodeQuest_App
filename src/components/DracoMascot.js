@@ -3,11 +3,22 @@
 // ==========================================
 import React, { useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Image, Animated } from 'react-native';
+import { playSound } from '../services/audioService';
 
 export default function DracoMascot({ message, mood = 'idle', onTap }) {
   // --- ANIMATION TRACKERS ---
   const translateY = useRef(new Animated.Value(0)).current; // Vertical movement
   const translateX = useRef(new Animated.Value(0)).current; // Horizontal movement
+
+  const handleDracoTap = () => {
+  // Play click sound on tap
+  playSound('click');
+
+  setDracoMood('success');
+  setTimeout(() => {
+    setDracoMood('idle');
+  }, 1200);
+};
 
   // --- REACTIVE EXPRESSION & ANIMATION LOGIC ---
   useEffect(() => {
