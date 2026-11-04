@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from './src/services/firebase';
 
+
 // ==========================================
 // IMPORTING DATABASE SEEDING SCRIPT
 // ==========================================
@@ -23,10 +24,17 @@ import QuestMapScreen from './src/screens/QuestMapScreen';
 import ChooseChallengeScreen from './src/screens/ChooseChallengeScreen';
 import QuizSessionScreen from './src/screens/QuizSessionScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
+import SettingsScreen from './src/screens/SettingsScreen';
 
 // Initialize our Stack and Bottom Tab navigators
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
+
+<Stack.Screen 
+  name="Settings" 
+  component={SettingsScreen} 
+  options={{ headerShown: false }} 
+/>
 
 // ==========================================
 // MAIN TABS NAVIGATION (Bottom Bar)
