@@ -253,6 +253,10 @@ export default function ProfileScreen({ navigation }) {
             </Text>
           </View>
 
+          {/* ========================================== */}
+          {/* CLICKABLE TOP SETTINGS GEAR ICON BUTTON    */}
+          {/* Navigates user to the SettingsScreen stack */}
+          {/* ========================================== */}
           <TouchableOpacity
             style={styles.settingsButton}
             onPress={() => navigation.navigate('Settings')}

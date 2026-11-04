@@ -1,7 +1,7 @@
 // ============================================================================
 // CODEQUEST QUIZ SESSION SCREEN - MODE-SPECIFIC & NON-REPEATING
-// Handles fetching mode-specific questions from Firestore, shuffling options,
-// tracking live hearts, evaluating answers, and updating user profile progression.
+// Handles fetching mode-specific questions from Firestore using direct queries,
+// shuffling options, tracking live hearts, and updating user profile progression.
 // ============================================================================
 
 import React, { useEffect, useState } from 'react';
@@ -16,9 +16,49 @@ import {
 } from 'react-native';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { db, auth } from '../services/firebase';
-import { collection, getDocs, doc, getDoc, increment } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc, query, where, increment } from 'firebase/firestore';
 import { updateUserStats } from '../services/userService';
 import DracoMascot from '../components/DracoMascot';
+
+/**
+ * ============================================================================
+ * STEP 2 FIX: MODE-SPECIFIC FIRESTORE QUERY FUNCTION
+ * Fetches only the questions matching the selected challenge mode from Firestore.
+ * Prevents Quiz, Prediction, and Bug-Fix modes from sharing the same questions.
+ * 
+ * @param {string} topicId - e.g., 'topic_1' or 'topic_2'
+ * @param {string} challengeMode - e.g., 'Quiz', 'Output Prediction', or 'Bug-Fix'
+ * ============================================================================
+ */
+export async function fetchQuestionsForMode(topicId, challengeMode) {
+  try {
+    // 1. Point to the nested 'questions' sub-collection inside the active topic document
+    const questionsRef = collection(db, 'topics', topicId, 'questions');
+
+    // 2. CRITICAL QUERY FIX: Filter strictly by challengeType in Firestore
+    const modeQuery = query(questionsRef, where('challengeType', '==', challengeMode));
+
+    // 3. Execute the query against Firestore database
+    const snapshot = await getDocs(modeQuery);
+
+    if (snapshot.empty) {
+      console.warn(`No questions found for mode: ${challengeMode} in topic: ${topicId}`);
+      return [];
+    }
+
+    // 4. Map the documents into an array of clean question objects
+    const questionsList = snapshot.docs.map(docSnap => ({
+      id: docSnap.id,
+      ...docSnap.data()
+    }));
+
+    return questionsList;
+
+  } catch (error) {
+    console.error("Error fetching mode-specific questions from Firestore:", error);
+    return [];
+  }
+}
 
 export default function QuizSessionScreen({ route, navigation }) {
   // Extract navigation parameters (topicId, challengeMode, and daily challenge flag)
@@ -32,17 +72,17 @@ export default function QuizSessionScreen({ route, navigation }) {
   // COMPONENT STATE MANAGEMENT
   // ==========================================================================
   const [questions, setQuestions] = useState([]);               // Filtered and randomized questions for the session
-  const [currentIndex, setCurrentIndex] = useState(0);           // Current question position tracker (0 to 4)
+  const [currentIndex, setCurrentIndex] = useState(0);          // Current question position tracker (0 to 4)
   const [shuffledOptions, setShuffledOptions] = useState([]);   // Randomized multiple-choice options for current question
   const [selectedOption, setSelectedOption] = useState(null);   // Option chosen by the user
   const [isAnswerChecked, setIsAnswerChecked] = useState(false); // Flag tracking if the answer has been submitted
   const [isCorrectAnswer, setIsCorrectAnswer] = useState(false); // Tracks if the user's answer was correct
   
-  const [hearts, setHearts] = useState(5);                       // Active heart count synced with Firestore
-  const [score, setScore] = useState(0);                         // Total correct answers in this session
-  const [earnedPoints, setEarnedPoints] = useState(0);           // Cumulative difficulty-weighted points
+  const [hearts, setHearts] = useState(5);                      // Active heart count synced with Firestore
+  const [score, setScore] = useState(0);                        // Total correct answers in this session
+  const [earnedPoints, setEarnedPoints] = useState(0);          // Cumulative difficulty-weighted points
   const [loading, setLoading] = useState(true);                  // Loading spinner indicator while fetching Firestore data
-  const [isFinished, setIsFinished] = useState(false);           // Flag indicating completion of all questions
+  const [isFinished, setIsFinished] = useState(false);          // Flag indicating completion of all questions
 
   // Draco mascot emotional state and speech bubble text
   const [dracoMood, setDracoMood] = useState('idle');
@@ -62,14 +102,12 @@ export default function QuizSessionScreen({ route, navigation }) {
   };
 
   // ==========================================================================
-  // DATA FETCHING & STRICT MODE FILTERING
-  // Queries Firestore sub-collection and filters strictly by challengeMode.
-  // Ensures exactly up to 5 questions are pulled per challenge mode.
+  // DATA FETCHING & STRICT MODE FILTERING HOOK
   // ==========================================================================
   useEffect(() => {
     async function loadQuizData() {
       try {
-        // 1. Fetch current authenticated user's heart count from Firestore
+        // 1. Fetch current authenticated user's live heart count from Firestore
         const userId = auth.currentUser?.uid;
         if (userId) {
           const userDoc = await getDoc(doc(db, 'users', userId));
@@ -78,32 +116,25 @@ export default function QuizSessionScreen({ route, navigation }) {
           }
         }
 
-        // 2. Fetch all questions inside the specific topic sub-collection
-        const querySnapshot = await getDocs(collection(db, 'topics', topicId, 'questions'));
-        let allQuestions = querySnapshot.docs.map(doc => doc.data());
+        // 2. Fetch mode-specific questions dynamically using our dedicated query function
+        let fetchedQuestions = await fetchQuestionsForMode(topicId, challengeMode);
 
-        // 3. STRICT MODE FILTER: Normalize strings to compare challenge types exactly ('Quiz', 'Output Prediction', 'Bug-Fix')
-        const targetMode = challengeMode ? challengeMode.toLowerCase().trim() : 'quiz';
-        let filtered = allQuestions.filter(q => {
-          const type = q.challengeType ? q.challengeType.toLowerCase().trim() : '';
-          return type === targetMode;
-        });
-
-        // Fallback safety net if exact mode filter returns empty
-        if (filtered.length === 0) {
-          filtered = allQuestions;
+        // Fallback safety net: if no questions match exact mode string, fetch all for the topic
+        if (fetchedQuestions.length === 0) {
+          const fallbackSnap = await getDocs(collection(db, 'topics', topicId, 'questions'));
+          fetchedQuestions = fallbackSnap.docs.map(d => d.data());
         }
 
-        // 4. Randomize and slice exactly 5 unique questions (or max available) for this level session
-        const randomized = shuffleArray(filtered).slice(0, Math.min(5, filtered.length));
+        // 3. Randomize and slice exactly 5 unique questions for this session
+        const randomized = shuffleArray(fetchedQuestions).slice(0, Math.min(5, fetchedQuestions.length));
         setQuestions(randomized);
 
-        // 5. Shuffle option choices for the first question
+        // 4. Shuffle option choices for the first active question
         if (randomized.length > 0) {
           setShuffledOptions(shuffleArray(randomized[0].options));
         }
       } catch (error) {
-        console.error("Error fetching mode questions:", error);
+        console.error("Error loading quiz session data:", error);
       } finally {
         setLoading(false); // Dismiss loading indicator
       }
@@ -144,7 +175,7 @@ export default function QuizSessionScreen({ route, navigation }) {
       const newHearts = Math.max(0, hearts - 1);
       setHearts(newHearts);
       
-      // Update heart count immediately in Firestore
+      // Update heart count immediately in Firestore database
       if (userId) {
         await updateUserStats({ hearts: newHearts });
       }
@@ -173,6 +204,9 @@ export default function QuizSessionScreen({ route, navigation }) {
       
       const userId = auth.currentUser?.uid;
       if (userId) {
+        // Calculate star rating based on correct answers
+        const starsEarned = score >= 4 ? 3 : score >= 2 ? 2 : 1;
+
         // Atomically increment XP, points, completed quests, weekly graph, and topic mastery
         await updateUserStats({
           xp: increment(xpEarned),
@@ -199,7 +233,7 @@ export default function QuizSessionScreen({ route, navigation }) {
   // ==========================================================================
   if (isFinished) {
     const earnedXp = isDaily ? 40 : 20;
-    const starsEarned = score >= 4 ? 3 : score >= 2 ? 2 : 1; // Calculate star rating based on correct answers
+    const starsEarned = score >= 4 ? 3 : score >= 2 ? 2 : 1; 
 
     return (
       <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
@@ -284,6 +318,13 @@ export default function QuizSessionScreen({ route, navigation }) {
             <Text style={styles.terminalCode}>{currentQ.codeSnippet}</Text>
           </View>
         )}
+
+        {/* Renders red terminal error text if available (used specifically for Bug-Fix mode) */}
+        {currentQ.errorText && (
+          <Text style={styles.errorText}>
+            {currentQ.errorText}
+          </Text>
+        )}
         
         {currentQ.questionText && <Text style={styles.promptText}>{currentQ.questionText}</Text>}
       </View>
@@ -346,6 +387,7 @@ const styles = StyleSheet.create({
   promptText: { fontSize: 15, fontWeight: '900', color: '#1F1F1F', marginVertical: 8 },
   terminalBox: { backgroundColor: '#111', borderRadius: 16, padding: 14, borderWidth: 2, borderColor: '#1F1F1F', marginBottom: 6 },
   terminalCode: { fontSize: 14, fontFamily: 'monospace', fontWeight: 'bold', color: '#FFD166', lineHeight: 20 },
+  errorText: { fontSize: 13, fontFamily: 'monospace', fontWeight: 'bold', color: '#E63946', marginBottom: 8 },
   optionCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', padding: 16, borderRadius: 18, borderWidth: 2.5, borderColor: '#1F1F1F', marginBottom: 12 },
   selectedOptionCard: { backgroundColor: '#FF8A5B' },
   optionLetter: { fontSize: 15, fontWeight: '900', color: '#1F1F1F', marginRight: 12, width: 20 },
