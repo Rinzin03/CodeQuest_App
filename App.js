@@ -1,6 +1,6 @@
-// ==========================================
+// ============================================================================
 // IMPORTING CORE REACT & NAVIGATION MODULES
-// ==========================================
+// ============================================================================
 import React, { useEffect, useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -24,6 +24,7 @@ import ChooseChallengeScreen from './src/screens/ChooseChallengeScreen';
 import QuizSessionScreen from './src/screens/QuizSessionScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
+import ForgotPasswordScreen from './src/screens/ForgotPasswordScreen';
 
 // Initialize our Stack and Bottom Tab navigators
 const Stack = createNativeStackNavigator();
@@ -99,7 +100,9 @@ export default function App() {
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ headerStyle: { backgroundColor: '#FFD166' } }}>
         {user ? (
-          // IF USER IS LOGGED IN: Show main application screens, challenges & settings
+          // ==================================================================
+          // IF USER IS LOGGED IN: Show main app tabs, challenges & settings
+          // ==================================================================
           <>
             <Stack.Screen 
               name="MainTabs" 
@@ -116,10 +119,7 @@ export default function App() {
               component={QuizSessionScreen} 
               options={{ title: 'Quest Challenge' }} 
             />
-            {/* ============================================================== */}
-            {/* SETTINGS SCREEN REGISTERED AT ROOT STACK LEVEL                */}
-            {/* Allows direct navigation from ProfileScreen header gear icon    */}
-            {/* ============================================================== */}
+            {/* Settings screen registered at root level for profile access */}
             <Stack.Screen 
               name="Settings" 
               component={SettingsScreen} 
@@ -127,12 +127,22 @@ export default function App() {
             />
           </>
         ) : (
-          // IF USER IS NOT LOGGED IN: Show authentication screen (Login / Sign Up)
-          <Stack.Screen 
-            name="Auth" 
-            component={AuthScreen} 
-            options={{ headerShown: false }} 
-          />
+          // ==================================================================
+          // IF USER IS LOGGED OUT: Show Auth screen AND ForgotPassword screen
+          // ==================================================================
+          <>
+            <Stack.Screen 
+              name="Auth" 
+              component={AuthScreen} 
+              options={{ headerShown: false }} 
+            />
+            {/* Moved here so users can access password reset from the login screen */}
+            <Stack.Screen 
+              name="ForgotPassword" 
+              component={ForgotPasswordScreen} 
+              options={{ headerShown: false }} 
+            />
+          </>
         )}
       </Stack.Navigator>
     </NavigationContainer>

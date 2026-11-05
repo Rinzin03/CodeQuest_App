@@ -74,8 +74,8 @@ export default function AuthScreen({ navigation }) {
       </TouchableOpacity>
 
       {isLogin && (
-        <TouchableOpacity onPress={handleReset} style={{ marginTop: 15 }}>
-          <Text style={styles.resetText}>Forgot Password?</Text>
+        <TouchableOpacity onPress={() => navigation.navigate('ForgotPassword')} style={{ marginTop: 15 }}>
+          <Text style={styles.ForgotPasswordText}>Forgot Password?</Text>
         </TouchableOpacity>
       )}
     </View>

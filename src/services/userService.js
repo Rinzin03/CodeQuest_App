@@ -1,7 +1,7 @@
 // ============================================================================
 // CODEQUEST USER SERVICE - TOPIC MASTERY & SEQUENTIAL UNLOCKING SYNC
 // Handles atomic Firestore updates for XP, Quest counts, stars, topic mastery,
-// and automatic sequential topic unlocking.
+// weekly graph arrays, and automatic sequential topic unlocking.
 // ============================================================================
 
 import { db, auth } from './firebase';
@@ -69,8 +69,8 @@ export async function checkAndRestoreHearts() {
 
 /**
  * Updates user statistics in Firestore upon quest completion.
- * Tracks mode completions (Quiz, Output Prediction, Bug-Fix) and unlocks the 
- * next sequential topic once all 3 modes for a topic are cleared.
+ * Tracks mode completions (Quiz, Output Prediction, Bug-Fix), unlocks sequential topics,
+ * and automatically plots earned XP into the correct weekday index (Mon-Sun).
  */
 export async function updateUserStats(stats, rawTopicId = null, challengeMode = null, earnedXp = 20, sessionStars = 3) {
   const userId = auth.currentUser?.uid;
@@ -99,10 +99,15 @@ export async function updateUserStats(stats, rawTopicId = null, challengeMode = 
     }
   }
 
-  // 2. WEEKLY XP GRAPH BREAKDOWN (Monday to Sunday)
+  // ============================================================================
+  // 2. AUTOMATIC WEEKLY XP GRAPH BREAKDOWN (Monday to Sunday)
+  // Maps JS getDay() (0=Sun, 1=Mon...6=Sat) to a Monday-starting array (0=Mon...6=Sun)
+  // Ensures bars dynamically increase on the exact current day of the week.
+  // ============================================================================
   let weeklyXp = [...(currentData.weeklyXp || [0, 0, 0, 0, 0, 0, 0])];
-  const jsDay = new Date().getDay();
-  const graphIndex = (jsDay + 6) % 7; 
+  const jsDay = new Date().getDay(); // 0 is Sunday, 1 is Monday, etc.
+  const graphIndex = (jsDay + 6) % 7; // Shifts Sunday (0) to index 6, Monday (1) to index 0
+  
   weeklyXp[graphIndex] = (weeklyXp[graphIndex] || 0) + earnedXp;
   updatePayload.weeklyXp = weeklyXp;
 
@@ -173,7 +178,7 @@ export async function updateUserStats(stats, rawTopicId = null, challengeMode = 
       topicProgress: { 
         topic_1: { unlocked: true, completedModes: [], stars: 0, percentage: 0 } 
       },
-      weeklyXp: weeklyXp,
+      weeklyXp: weeklyXp, // Initializes clean weekly tracking array
       lastHeartLossTime: null,
       ...updatePayload
     });

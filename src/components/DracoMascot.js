@@ -1,24 +1,15 @@
+
 // ==========================================
 // FREESTANDING EXPRESSIVE DRACO MASCOT
 // ==========================================
 import React, { useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Image, Animated } from 'react-native';
-import { playSound } from '../services/audioService';
 
 export default function DracoMascot({ message, mood = 'idle', onTap }) {
+
   // --- ANIMATION TRACKERS ---
   const translateY = useRef(new Animated.Value(0)).current; // Vertical movement
   const translateX = useRef(new Animated.Value(0)).current; // Horizontal movement
-
-  const handleDracoTap = () => {
-  // Play click sound on tap
-  playSound('click');
-
-  setDracoMood('success');
-  setTimeout(() => {
-    setDracoMood('idle');
-  }, 1200);
-};
 
   // --- REACTIVE EXPRESSION & ANIMATION LOGIC ---
   useEffect(() => {
@@ -77,19 +68,19 @@ export default function DracoMascot({ message, mood = 'idle', onTap }) {
 
   return (
     <View style={styles.wrapper}>
-      
+
       {/* ======================================================== */}
       {/* 1. BIG DRACO CHARACTER (POSITIONED ON THE LEFT)          */}
       {/* ======================================================== */}
-      <Animated.View 
+      <Animated.View
         style={[
-          styles.bigCharacterWrapper, 
+          styles.bigCharacterWrapper,
           { transform: [{ translateY }, { translateX }] }
         ]}
       >
         <TouchableOpacity activeOpacity={0.9} onPress={onTap}>
-          <Image 
-            source={require('../../assets/draco.png')} 
+          <Image
+            source={require('../../assets/draco.png')}
             style={styles.bigDracoImage}
             resizeMode="contain"
           />
@@ -124,26 +115,26 @@ const styles = StyleSheet.create({
   },
 
   // Big Freestanding Draco on the left edge
-  bigCharacterWrapper: { 
+  bigCharacterWrapper: {
     position: 'absolute',
     left: 0,
     top: -25,
     zIndex: 10, // Keeps Draco rendered cleanly on top
   },
-  
-  bigDracoImage: { 
-    width: 95, 
-    height: 95 
+
+  bigDracoImage: {
+    width: 95,
+    height: 95
   },
 
   // Compact Speech Bubble Box shifted right so Draco never covers it
-  speechBubbleCard: { 
-    backgroundColor: '#FFF', 
+  speechBubbleCard: {
+    backgroundColor: '#FFF',
     paddingVertical: 10,
     paddingHorizontal: 14,
     marginLeft: 78, // Pushes speech box clear of Draco's body
-    borderRadius: 18, 
-    borderWidth: 2.5, 
+    borderRadius: 18,
+    borderWidth: 2.5,
     borderColor: '#1F1F1F',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 3 },
@@ -153,20 +144,20 @@ const styles = StyleSheet.create({
     minHeight: 65,
     justifyContent: 'center'
   },
-  
+
   speechTextContent: { flex: 1 },
-  
-  speechBubbleHint: { 
-    fontSize: 9, 
-    fontWeight: '900', 
-    marginBottom: 2, 
-    textTransform: 'uppercase' 
+
+  speechBubbleHint: {
+    fontSize: 9,
+    fontWeight: '900',
+    marginBottom: 2,
+    textTransform: 'uppercase'
   },
-  
-  speechText: { 
-    fontSize: 12, 
-    fontWeight: '800', 
-    color: '#1F1F1F', 
-    lineHeight: 16 
+
+  speechText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#1F1F1F',
+    lineHeight: 16
   }
 });
