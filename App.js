@@ -25,6 +25,7 @@ import QuizSessionScreen from './src/screens/QuizSessionScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import ForgotPasswordScreen from './src/screens/ForgotPasswordScreen';
+import SplashScreen from './src/screens/SplashScreen';
 
 // Initialize our Stack and Bottom Tab navigators
 const Stack = createNativeStackNavigator();
@@ -78,6 +79,7 @@ function MainTabs() {
 export default function App() {
   const [user, setUser] = useState(null);
   const [initializing, setInitializing] = useState(true);
+  const [showSplash, setShowSplash] = useState(true); // Controls custom splash screen visibility
 
   // 1. Run database seeding script ONCE when the app starts up
   useEffect(() => {
@@ -93,9 +95,15 @@ export default function App() {
     return subscriber;
   }, [initializing]);
 
-  // Prevent rendering until Firebase finishes checking the user session
+  // STEP 1: Show Custom Splash Screen first
+  if (showSplash) {
+    return <SplashScreen onFinish={() => setShowSplash(false)} />;
+  }
+
+  // STEP 2: Prevent rendering until Firebase finishes checking user session
   if (initializing) return null;
 
+  // STEP 3: Render main navigation stack based on authentication state
   return (
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ headerStyle: { backgroundColor: '#FFD166' } }}>
@@ -119,7 +127,6 @@ export default function App() {
               component={QuizSessionScreen} 
               options={{ title: 'Quest Challenge' }} 
             />
-            {/* Settings screen registered at root level for profile access */}
             <Stack.Screen 
               name="Settings" 
               component={SettingsScreen} 
@@ -136,7 +143,6 @@ export default function App() {
               component={AuthScreen} 
               options={{ headerShown: false }} 
             />
-            {/* Moved here so users can access password reset from the login screen */}
             <Stack.Screen 
               name="ForgotPassword" 
               component={ForgotPasswordScreen} 
